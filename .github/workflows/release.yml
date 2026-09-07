@@ -46,11 +46,11 @@ jobs:
           secretId: ${{ secrets.VAULT_SECRET_ID }}
           namespace: iac-expkits/prod
           secrets: *vault-common-ci-secrets
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Checkout public Model Explorer dependency metadata
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.MODEL_EXPLORER_REPOSITORY }}
           ref: ${{ env.MODEL_EXPLORER_SBOM_COMMIT }}
@@ -195,7 +195,7 @@ jobs:
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_USERNAME | UV_PUBLISH_USERNAME ;
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_PASSWORD | UV_PUBLISH_PASSWORD
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -226,7 +226,7 @@ jobs:
         with:
           app_id: ${{ secrets.ME_REPO_ACCESS_APP_ID }}
           private_key: ${{ secrets.ME_REPO_ACCESS_PRIVATE_KEY }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ steps.get_app_token.outputs.token }}
