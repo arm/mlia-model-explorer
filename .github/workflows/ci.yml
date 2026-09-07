@@ -37,7 +37,7 @@ jobs:
           secretId: ${{ secrets.VAULT_SECRET_ID }}
           namespace: iac-expkits/prod
           secrets: *vault-common-ci-secrets
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
       - uses: astral-sh/setup-uv@v5
@@ -68,7 +68,7 @@ jobs:
           secretId: ${{ secrets.VAULT_SECRET_ID }}
           namespace: iac-expkits/prod
           secrets: *vault-common-ci-secrets
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -93,7 +93,7 @@ jobs:
           secretId: ${{ secrets.VAULT_SECRET_ID }}
           namespace: iac-expkits/prod
           secrets: *vault-common-ci-secrets
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
