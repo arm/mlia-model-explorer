@@ -41,7 +41,7 @@ jobs:
             --with 'mkdocs-material>=9.5,<10.0' \
             mkdocs build --strict --no-directory-urls
       - name: Upload docs artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: docs-site-mlia-model-explorer
           path: .mkdocs/site/
