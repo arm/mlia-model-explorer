@@ -1,0 +1,277 @@
+# SPDX-FileCopyrightText: Copyright 2026, Arm Limited and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.10"
+  MODEL_EXPLORER_REPOSITORY: google-ai-edge/model-explorer
+  MODEL_EXPLORER_SBOM_COMMIT: c0f8dbac5cf2cab5169eeefc6e4c2bb57ac25716
+
+  # Separate uv installations from each other on self-hosten runners
+  # in case they share the working directory
+  UV_CACHE_DIR: ${{ github.workspace }}/.uv-cache-ci-${{ github.run_id }}-${{ github.run_attempt }}
+  UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv-ci-${{ github.run_id }}-${{ github.run_attempt }}
+  UV_TOOL_DIR: ${{ github.workspace }}/.uv-tools-ci-${{ github.run_id }}-${{ github.run_attempt }}
+  UV_TOOL_BIN_DIR: ${{ github.workspace }}/.uv-bin-ci-${{ github.run_id }}-${{ github.run_attempt }}
+
+  VAULT_COMMON_CI_SECRETS: &vault-common-ci-secrets |
+    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
+    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | UV_INDEX_INTERNAL_USERNAME ;
+    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_PASSWORD | UV_INDEX_INTERNAL_PASSWORD
+
+jobs:
+  build_and_test_wheel:
+    name: Build And Test Wheel
+    runs-on: ["${{ vars.UBUNTU_RUNNER }}", "X64"]
+    steps:
+      - name: Import secrets from Vault
+        if: ${{ github.event.repository.private }}
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ secrets.VAULT_URL }}
+          method: approle
+          roleId: ${{ secrets.VAULT_ROLE_ID }}
+          secretId: ${{ secrets.VAULT_SECRET_ID }}
+          namespace: iac-expkits/prod
+          secrets: *vault-common-ci-secrets
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Checkout public Model Explorer dependency metadata
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.MODEL_EXPLORER_REPOSITORY }}
+          ref: ${{ env.MODEL_EXPLORER_SBOM_COMMIT }}
+          path: .ci/model-explorer-public
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: Set up Chrome
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: stable
+      - uses: ./.github/actions/build-wheel
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          internal-dev-version: >-
+            ${{
+              github.event_name == 'push' &&
+              github.ref == 'refs/heads/main' &&
+              github.repository_owner != 'arm'
+            }}
+      - run: uv sync --no-sources --no-install-project --extra onnx --no-default-groups --group test
+      - shell: bash
+        run: |
+          set -o pipefail
+          uv run --no-sync \
+            --with dist/*.whl \
+            -- pytest tests/ | tee coverage.txt
+      - name: Publish coverage summary
+        shell: bash
+        run: |
+          {
+            echo "## Coverage"
+            echo ""
+            echo '```text'
+            tail -n 20 coverage.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+      - name: Create wheel SBOM
+        run: |
+          python -m pip install --index-url https://pypi.org/simple cyclonedx-bom==7.3.0
+          python -m venv --clear .sbom-venv
+          uv pip install --python .sbom-venv/bin/python dist/*.whl
+          mkdir -p sbom
+          python -m cyclonedx_py environment .sbom-venv/bin/python \
+            --output-format JSON \
+            --output-file sbom/mlia-model-explorer-wheel.cdx.json
+          python scripts/add-sbom-disclaimer.py \
+            sbom/mlia-model-explorer-wheel.cdx.json
+      - name: Create vendored Model Explorer visualizer SBOM
+        run: |
+          npm install --global @cyclonedx/cyclonedx-npm@4.2.1
+          VISUALIZER_SBOM_DIR="${RUNNER_TEMP}/model-explorer-visualizer-sbom"
+          mkdir -p "${VISUALIZER_SBOM_DIR}"
+          cp .ci/model-explorer-public/src/ui/package.json \
+            .ci/model-explorer-public/src/ui/package-lock.json \
+            "${VISUALIZER_SBOM_DIR}/"
+          pushd "${VISUALIZER_SBOM_DIR}"
+          npm pkg set \
+            name=ai-edge-model-explorer-visualizer \
+            version=0.1.2
+          npm install \
+            --package-lock-only \
+            --ignore-scripts \
+            --save-exact \
+            @dagrejs/dagre@1.1.1 \
+            @dagrejs/graphlib@2.2.1
+          cyclonedx-npm \
+            --package-lock-only \
+            --omit dev \
+            --mc-type library \
+            --output-format JSON \
+            --output-file \
+            "${GITHUB_WORKSPACE}/sbom/model-explorer-visualizer.cdx.json" \
+            package.json
+          popd
+          python scripts/add-sbom-disclaimer.py \
+            sbom/model-explorer-visualizer.cdx.json
+      - name: Upload project SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-sbom
+          path: sbom/*.json
+          if-no-files-found: error
+      - name: Upload built wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-wheel
+          path: dist/*
+
+  publish_release:
+    name: Publish Release
+    if: >-
+      ${{
+        always() &&
+        needs.build_and_test_wheel.result == 'success' &&
+        (
+          (
+            github.event.repository.private &&
+            github.event_name == 'push' &&
+            (
+              github.ref == 'refs/heads/main' ||
+              github.ref_type == 'tag'
+            )
+          ) ||
+          (
+            !github.event.repository.private &&
+            github.ref_type == 'tag' &&
+            !contains(github.ref_name, '-')
+          )
+        )
+      }}
+    runs-on: ["${{ vars.UBUNTU_RUNNER }}", "X64"]
+    needs:
+      - build_and_test_wheel
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Import secrets from Vault
+        if: ${{ github.event.repository.private }}
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ secrets.VAULT_URL }}
+          method: approle
+          roleId: ${{ secrets.VAULT_ROLE_ID }}
+          secretId: ${{ secrets.VAULT_SECRET_ID }}
+          namespace: iac-expkits/prod
+          secrets: |
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_HOST | UV_PUBLISH_URL ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_USERNAME | UV_PUBLISH_USERNAME ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_PASSWORD | UV_PUBLISH_PASSWORD
+
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: built-wheel
+          path: dist
+      - run: uv publish dist/*
+
+  publish_github_release:
+    name: Publish GitHub Release
+    if: >-
+      ${{
+        github.repository_owner == 'arm' &&
+        github.ref_type == 'tag' &&
+        !contains(github.ref_name, '-')
+      }}
+    needs:
+      - build_and_test_wheel
+      - publish_release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Create release token
+        uses: getsentry/action-github-app-token@d4b5da6c5e37703f8c3b3e43abb5705b46e159cc # v3.0.0
+        id: get_app_token
+        with:
+          app_id: ${{ secrets.ME_REPO_ACCESS_APP_ID }}
+          private_key: ${{ secrets.ME_REPO_ACCESS_PRIVATE_KEY }}
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.get_app_token.outputs.token }}
+          persist-credentials: false
+      - name: Generate release notes
+        uses: orhun/git-cliff-action@d77b37db2e3f7398432d34b72a12aa3e2ba87e51 # v4.6.0
+        id: git-cliff
+        with:
+          config: cliff.toml
+          args: --latest
+        env:
+          OUTPUT: CHANGELOG.md
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: built-wheel
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: project-sbom
+          path: sbom
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@5be0e66d93ac7ed76da52eca8bb058f665c3a5fe # v2.4.2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: CHANGELOG.md
+          files: |
+            dist/*
+            sbom/*.json
+          token: ${{ steps.get_app_token.outputs.token }}
+
+  sync_to_public_repo:
+    needs:
+      - build_and_test_wheel
+    if: >-
+      ${{
+        github.event.repository.private &&
+        (
+          github.ref_type != 'tag' ||
+          !contains(github.ref_name, '-')
+        )
+      }}
+    uses: Arm-Debug/github-workflow-wizardry/.github/workflows/sync-to-public-repo.yml@main
+    with:
+      public_repo: arm/mlia-model-explorer
+    secrets: inherit

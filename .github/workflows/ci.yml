@@ -1,0 +1,130 @@
+# SPDX-FileCopyrightText: Copyright 2026, Arm Limited and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.10"
+
+  # Separate uv installations from each other on self-hosten runners
+  # in case they share the working directory
+  UV_CACHE_DIR: ${{ github.workspace }}/.uv-cache-ci-${{ github.run_id }}-${{ github.run_attempt }}
+  UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv-ci-${{ github.run_id }}-${{ github.run_attempt }}
+  UV_TOOL_DIR: ${{ github.workspace }}/.uv-tools-ci-${{ github.run_id }}-${{ github.run_attempt }}
+  UV_TOOL_BIN_DIR: ${{ github.workspace }}/.uv-bin-ci-${{ github.run_id }}-${{ github.run_attempt }}
+
+  VAULT_COMMON_CI_SECRETS: &vault-common-ci-secrets |
+    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
+    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | UV_INDEX_INTERNAL_USERNAME ;
+    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_PASSWORD | UV_INDEX_INTERNAL_PASSWORD
+
+jobs:
+  lint:
+    name: Lint and Copyright
+    runs-on: ["${{ vars.UBUNTU_RUNNER }}", "X64"]
+    steps:
+      - name: Import secrets from Vault
+        if: ${{ github.event.repository.private }}
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ secrets.VAULT_URL }}
+          method: approle
+          roleId: ${{ secrets.VAULT_ROLE_ID }}
+          secretId: ${{ secrets.VAULT_SECRET_ID }}
+          namespace: iac-expkits/prod
+          secrets: *vault-common-ci-secrets
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Cache pre-commit environments
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit|${{ runner.os }}|${{ env.PYTHON_VERSION }}|${{ hashFiles('.pre-commit-config.yaml') }}
+      - run: uv sync --no-sources --extra onnx --group dev
+      - name: Copyright
+        run: uv run pre-commit run --all-files
+      - name: Lint
+        run: uv run --no-sync ruff check --output-format=github .
+
+  build:
+    name: Build
+    runs-on: ["${{ vars.UBUNTU_RUNNER }}", "X64"]
+    steps:
+      - name: Import secrets from Vault
+        if: ${{ github.event.repository.private }}
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ secrets.VAULT_URL }}
+          method: approle
+          roleId: ${{ secrets.VAULT_ROLE_ID }}
+          secretId: ${{ secrets.VAULT_SECRET_ID }}
+          namespace: iac-expkits/prod
+          secrets: *vault-common-ci-secrets
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: uv build
+
+  test_quick:
+    name: Quick Tests (Python ${{ matrix.python-version }} on ${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+        runner: ${{ fromJSON(vars.TEST_RUNNERS) }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Import secrets from Vault
+        if: ${{ github.event.repository.private }}
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ secrets.VAULT_URL }}
+          method: approle
+          roleId: ${{ secrets.VAULT_ROLE_ID }}
+          secretId: ${{ secrets.VAULT_SECRET_ID }}
+          namespace: iac-expkits/prod
+          secrets: *vault-common-ci-secrets
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: Set up Chrome
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: stable
+      - run: uv sync --no-sources --extra onnx --group test
+      - name: Run tests
+        shell: bash
+        run: |
+          set -o pipefail
+          uv run pytest tests/ | tee coverage.txt
+      - name: Publish coverage summary
+        shell: bash
+        run: |
+          {
+            echo "## Coverage"
+            echo ""
+            echo '```text'
+            tail -n 20 coverage.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml

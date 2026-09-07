@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: Copyright 2026, Arm Limited and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+
+site_name: MLIA Model Explorer Plugin
+site_description: Documentation for the MLIA Model Explorer post-analysis plugin.
+repo_url: https://github.com/arm/mlia-model-explorer
+repo_name: arm/mlia-model-explorer
+edit_uri: edit/main/docs/source/
+docs_dir: docs/source
+site_dir: .mkdocs/site
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.highlight
+    - search.share
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+  - tables
+  - toc:
+      permalink: true
+
+extra_javascript:
+  - https://unpkg.com/mermaid@10.9.1/dist/mermaid.min.js
+
+nav:
+  - Home: index.md
+  - Overview: overview.md
+  - High-level Architecture: high_level_architecture.md
+  - Plugin Integration: plugin_integration.md
+  - End-to-end Execution Flow: execution_flow.md
+  - Usage: usage.md
+  - Python API: api.md
+  - Artifacts: artifacts.md
+  - Model Adapters: adapters.md
+  - Development: development.md

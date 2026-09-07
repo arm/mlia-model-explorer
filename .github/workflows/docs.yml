@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: Copyright 2026, Arm Limited and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Docs
+
+on:
+  pull_request:
+    paths:
+      - 'README.md'
+      - 'mkdocs.yml'
+      - 'pyproject.toml'
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+
+env:
+  PYTHON_VERSION: '3.12'
+
+  # Separate uv installations from each other on self-hosted runners
+  # in case they share the working directory
+  UV_CACHE_DIR: ${{ github.workspace }}/.uv-cache-ci-${{ github.run_id }}-${{ github.run_attempt }}
+  UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv-ci-${{ github.run_id }}-${{ github.run_attempt }}
+  UV_TOOL_DIR: ${{ github.workspace }}/.uv-tools-ci-${{ github.run_id }}-${{ github.run_attempt }}
+  UV_TOOL_BIN_DIR: ${{ github.workspace }}/.uv-bin-ci-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  build-docs:
+    name: Build docs
+    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-24.04-arm' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install Python development headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-dev
+      - name: Build docs
+        run: |
+          uv tool run --from 'mkdocs>=1.6,<2.0' \
+            --with 'mkdocs-material>=9.5,<10.0' \
+            mkdocs build --strict --no-directory-urls
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: docs-site-mlia-model-explorer
+          path: .mkdocs/site/
+          if-no-files-found: error

@@ -1,0 +1,120 @@
+# SPDX-FileCopyrightText: Copyright 2026, Arm Limited and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = [
+    "hatchling>=1.27.0",
+    "uv-dynamic-versioning>=0.8.2,<0.9.0"
+]
+build-backend = "hatchling.build"
+
+[project]
+name = "mlia-model-explorer"
+dynamic = ["version"]
+description = "ML Inference Advisor Model Explorer Plugin"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mlia>=0.12.2.dev24,<0.13",
+    # Python adapter/conversion API only. The compatible browser runtime is the
+    # vendored embedded visualizer documented in README.md.
+    "ai-edge-model-explorer>=0.1.32,<0.2"
+]
+keywords = ["ml", "arm", "mlia", "model-explorer"]
+authors = [{name = "Arm Ltd", email = "mlia@arm.com"}]
+license = "Apache-2.0"
+license-files = ["LICENSES/*.txt"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+
+[project.optional-dependencies]
+spirv = ["spirv-adapter-model-explorer"]
+vgf = ["vgf-adapter-model-explorer"]
+tosa = ["tosa-adapter-model-explorer"]
+onnx = ["model-explorer-onnx>=0.4.2,<0.5"]
+adapters = [
+    "spirv-adapter-model-explorer",
+    "vgf-adapter-model-explorer",
+    "tosa-adapter-model-explorer",
+    "model-explorer-onnx>=0.4.2,<0.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/arm/mlia-model-explorer.git"
+
+[project.entry-points."mlia.plugin.analysis"]
+model_explorer = "mlia.model_explorer.plugin:ModelExplorerAnalysisPlugin"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mlia"]
+artifacts = [
+    "src/mlia/model_explorer/typescript/*.ts",
+    "src/mlia/model_explorer/model-explorer-visualizer/**"
+]
+exclude = [
+    "**/__pycache__",
+    "**/*.pyc"
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/mlia/**",
+    "docs/**",
+    "LICENSES/*.txt",
+    "README.md",
+    "mkdocs.yml",
+    "pyproject.toml"
+]
+exclude = [
+    "**/__pycache__",
+    "**/*.pyc"
+]
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+pattern = "default-unprefixed"
+bump = true
+fallback-version = "0.0.0.dev0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = [
+    "--cov=mlia.model_explorer",
+    "--cov-report=term-missing",
+    "--cov-report=xml:coverage.xml",
+    "--cov-fail-under=50"
+]
+
+[tool.mypy]
+ignore_missing_imports = true
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "W"]
+ignore = ["B905", "B028", "B027", "B017", "B008", "B006"]
+
+[dependency-groups]
+test = [
+    "pytest~=9.0",
+    "pytest-cov~=7.0"
+]
+dev = [
+    {include-group = "test"},
+    "mypy==1.5.1",
+    "pre-commit==4.5.1",
+    "ruff==0.15.0"
+]
+docs = [
+    "mkdocs>=1.6,<2.0",
+    "mkdocs-material>=9.5,<10.0",
+    "pymdown-extensions>=10.0,<11.0"
+]

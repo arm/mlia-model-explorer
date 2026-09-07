@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: Copyright 2026, Arm Limited and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+
+repos:
+  - repo: local
+    hooks:
+      - id: check-copyright-header
+        name: Check copyright header years
+        entry: python pre_commit_hooks/check_copyright_header.py
+        language: system
+        verbose: true
+        exclude: '\.license$'
