@@ -96,7 +96,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage.xml
@@ -141,13 +141,13 @@ jobs:
           python scripts/add-sbom-disclaimer.py \
             sbom/model-explorer-visualizer.cdx.json
       - name: Upload project SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: project-sbom
           path: sbom/*.json
           if-no-files-found: error
       - name: Upload built wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: built-wheel
           path: dist/*
