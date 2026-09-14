@@ -11,6 +11,28 @@ on:
       - 'pyproject.toml'
       - 'docs/**'
       - '.github/workflows/docs.yml'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish documentation for the release wheel artifact
+        required: false
+        type: boolean
+        default: false
+      release-tag:
+        description: Release tag associated with the wheel artifact
+        required: false
+        type: string
+        default: ""
+      source-ref:
+        description: Git ref or commit containing the release documentation
+        required: false
+        type: string
+        default: ""
+      wheel-artifact:
+        description: Name of the release workflow wheel artifact
+        required: false
+        type: string
+        default: built-wheel
   workflow_call:
     inputs:
       publish:
