@@ -28,7 +28,7 @@ jobs:
     runs-on: ["${{ vars.UBUNTU_RUNNER }}", "X64"]
     steps:
       - name: Import secrets from Vault
-        if: ${{ github.event.repository.private }}
+        if: ${{ github.repository_owner != 'arm' }}
         uses: hashicorp/vault-action@v4
         with:
           url: ${{ secrets.VAULT_URL }}
@@ -59,7 +59,7 @@ jobs:
     runs-on: ["${{ vars.UBUNTU_RUNNER }}", "X64"]
     steps:
       - name: Import secrets from Vault
-        if: ${{ github.event.repository.private }}
+        if: ${{ github.repository_owner != 'arm' }}
         uses: hashicorp/vault-action@v4
         with:
           url: ${{ secrets.VAULT_URL }}
@@ -84,7 +84,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Import secrets from Vault
-        if: ${{ github.event.repository.private }}
+        if: ${{ github.repository_owner != 'arm' }}
         uses: hashicorp/vault-action@v4
         with:
           url: ${{ secrets.VAULT_URL }}

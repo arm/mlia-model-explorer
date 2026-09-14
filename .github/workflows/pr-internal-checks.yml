@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   checks:
-    if: ${{ github.event.repository.private }}
+    if: ${{ github.repository_owner != 'arm' }}
     uses: Arm-Debug/ai-debug-workflows/.github/workflows/internal-checks.yml@main
     with:
       internal_scan: true

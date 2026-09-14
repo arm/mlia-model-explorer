@@ -37,7 +37,7 @@ jobs:
     runs-on: ["${{ vars.UBUNTU_RUNNER }}", "X64"]
     steps:
       - name: Import secrets from Vault
-        if: ${{ github.event.repository.private }}
+        if: ${{ github.repository_owner != 'arm' }}
         uses: hashicorp/vault-action@v4
         with:
           url: ${{ secrets.VAULT_URL }}
@@ -160,7 +160,7 @@ jobs:
         needs.build_and_test_wheel.result == 'success' &&
         (
           (
-            github.event.repository.private &&
+            github.repository_owner != 'arm' &&
             github.event_name == 'push' &&
             (
               github.ref == 'refs/heads/main' ||
@@ -168,7 +168,7 @@ jobs:
             )
           ) ||
           (
-            !github.event.repository.private &&
+            github.repository_owner == 'arm' &&
             github.ref_type == 'tag' &&
             !contains(github.ref_name, '-')
           )
@@ -182,7 +182,7 @@ jobs:
       id-token: write
     steps:
       - name: Import secrets from Vault
-        if: ${{ github.event.repository.private }}
+        if: ${{ github.repository_owner != 'arm' }}
         uses: hashicorp/vault-action@v4
         with:
           url: ${{ secrets.VAULT_URL }}
@@ -204,6 +204,26 @@ jobs:
           name: built-wheel
           path: dist
       - run: uv publish dist/*
+
+
+  publish_docs:
+    name: Publish Documentation
+    if: >-
+      ${{
+        github.repository_owner != 'arm' &&
+        github.ref_type == 'tag' &&
+        !contains(github.ref_name, '-')
+      }}
+    needs:
+      - build_and_test_wheel
+      - publish_release
+    uses: ./.github/workflows/docs.yml
+    with:
+      publish: true
+      release-tag: ${{ github.ref_name }}
+      source-ref: ${{ github.sha }}
+      wheel-artifact: built-wheel
+    secrets: inherit
 
   publish_github_release:
     name: Publish GitHub Release
@@ -265,7 +285,7 @@ jobs:
       - build_and_test_wheel
     if: >-
       ${{
-        github.event.repository.private &&
+        github.repository_owner != 'arm' &&
         (
           github.ref_type != 'tag' ||
           !contains(github.ref_name, '-')
