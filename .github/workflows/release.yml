@@ -32,6 +32,35 @@ env:
     kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_PASSWORD | UV_INDEX_INTERNAL_PASSWORD
 
 jobs:
+  classify_release_ref:
+    name: Classify release ref
+    runs-on: ubuntu-latest
+    outputs:
+      is_tag: ${{ steps.classify.outputs.is_tag }}
+      is_clean_release_tag: ${{ steps.classify.outputs.is_clean_release_tag }}
+      is_prerelease_tag: ${{ steps.classify.outputs.is_prerelease_tag }}
+    steps:
+      - id: classify
+        name: Classify tag
+        shell: bash
+        run: |
+          is_tag=false
+          is_clean_release_tag=false
+          is_prerelease_tag=false
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            is_tag=true
+            if [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+              is_clean_release_tag=true
+            else
+              is_prerelease_tag=true
+            fi
+          fi
+
+          echo "is_tag=${is_tag}" >> "${GITHUB_OUTPUT}"
+          echo "is_clean_release_tag=${is_clean_release_tag}" >> "${GITHUB_OUTPUT}"
+          echo "is_prerelease_tag=${is_prerelease_tag}" >> "${GITHUB_OUTPUT}"
+
   build_and_test_wheel:
     name: Build And Test Wheel
     runs-on: ["${{ vars.UBUNTU_RUNNER }}", "X64"]
@@ -164,18 +193,18 @@ jobs:
             github.event_name == 'push' &&
             (
               github.ref == 'refs/heads/main' ||
-              github.ref_type == 'tag'
+              needs.classify_release_ref.outputs.is_tag == 'true'
             )
           ) ||
           (
             github.repository_owner == 'arm' &&
-            github.ref_type == 'tag' &&
-            !contains(github.ref_name, '-')
+            needs.classify_release_ref.outputs.is_clean_release_tag == 'true'
           )
         )
       }}
     runs-on: ["${{ vars.UBUNTU_RUNNER }}", "X64"]
     needs:
+      - classify_release_ref
       - build_and_test_wheel
     permissions:
       contents: read
@@ -211,10 +240,10 @@ jobs:
     if: >-
       ${{
         github.repository_owner != 'arm' &&
-        github.ref_type == 'tag' &&
-        !contains(github.ref_name, '-')
+        needs.classify_release_ref.outputs.is_clean_release_tag == 'true'
       }}
     needs:
+      - classify_release_ref
       - build_and_test_wheel
       - publish_release
     uses: ./.github/workflows/docs.yml
@@ -229,18 +258,25 @@ jobs:
     name: Publish GitHub Release
     if: >-
       ${{
-        github.repository_owner == 'arm' &&
-        github.ref_type == 'tag' &&
-        !contains(github.ref_name, '-')
+        always() &&
+        needs.build_and_test_wheel.result == 'success' &&
+        needs.publish_release.result == 'success' &&
+        needs.classify_release_ref.outputs.is_tag == 'true' &&
+        (
+          github.repository_owner != 'arm' ||
+          needs.classify_release_ref.outputs.is_clean_release_tag == 'true'
+        )
       }}
     needs:
+      - classify_release_ref
       - build_and_test_wheel
       - publish_release
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Create release token
+        if: ${{ github.repository_owner == 'arm' }}
         uses: getsentry/action-github-app-token@d4b5da6c5e37703f8c3b3e43abb5705b46e159cc # v3.0.0
         id: get_app_token
         with:
@@ -249,7 +285,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ steps.get_app_token.outputs.token }}
+          token: ${{ github.repository_owner == 'arm' && steps.get_app_token.outputs.token || github.token }}
           persist-credentials: false
       - name: Generate release notes
         uses: orhun/git-cliff-action@d77b37db2e3f7398432d34b72a12aa3e2ba87e51 # v4.6.0
@@ -259,7 +295,7 @@ jobs:
           args: --latest
         env:
           OUTPUT: CHANGELOG.md
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.repository_owner == 'arm' && steps.get_app_token.outputs.token || github.token }}
           GITHUB_REPO: ${{ github.repository }}
       - uses: actions/download-artifact@v4
         with:
@@ -275,23 +311,73 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body_path: CHANGELOG.md
+          prerelease: ${{ needs.classify_release_ref.outputs.is_prerelease_tag == 'true' }}
           files: |
             dist/*
             sbom/*.json
-          token: ${{ steps.get_app_token.outputs.token }}
+          token: ${{ github.repository_owner == 'arm' && steps.get_app_token.outputs.token || github.token }}
 
-  sync_to_public_repo:
+  sync-commits-to-public-repo:
+    name: Sync commits to public repo
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository_owner != 'arm'
     needs:
       - build_and_test_wheel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout MLIA Model Explorer
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Checkout public MLIA Model Explorer
+        uses: actions/checkout@v4
+        with:
+          repository: arm/mlia-model-explorer
+          token: ${{ secrets.ARM_ORG_TOKEN }}
+          path: target-repo
+          persist-credentials: true
+      - name: Push commits to public repo
+        env:
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          cd target-repo
+          git remote add source "$SOURCE_URL"
+          git fetch source main
+          git checkout main
+          git merge source/main
+          git push origin main
+
+  sync-release-tags-to-public-repo:
+    name: Sync release tags to public repo
     if: >-
       ${{
+        github.event_name == 'push' &&
         github.repository_owner != 'arm' &&
-        (
-          github.ref_type != 'tag' ||
-          !contains(github.ref_name, '-')
-        )
+        needs.classify_release_ref.outputs.is_clean_release_tag == 'true'
       }}
-    uses: Arm-Debug/github-workflow-wizardry/.github/workflows/sync-to-public-repo.yml@main
-    with:
-      public_repo: arm/mlia-model-explorer
-    secrets: inherit
+    needs:
+      - classify_release_ref
+      - build_and_test_wheel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout MLIA Model Explorer
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Checkout public MLIA Model Explorer
+        uses: actions/checkout@v4
+        with:
+          repository: arm/mlia-model-explorer
+          token: ${{ secrets.ARM_ORG_TOKEN }}
+          path: target-repo
+          persist-credentials: true
+      - name: Push tag to public repo
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          cd target-repo
+          git remote add source "$SOURCE_URL"
+          git fetch source --tags
+          git push origin "refs/tags/$REF_NAME"
