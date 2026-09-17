@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
+import subprocess  # nosec B404: tests execute local browser/node commands.
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -2269,7 +2269,7 @@ def _headless_browser() -> str | None:
 
 
 def _run_headless_browser(browser: str, index: Path, budget_ms: int = 5000):
-    return subprocess.run(
+    return subprocess.run(  # nosec B603: browser path is discovered locally; no shell.
         [
             browser,
             "--headless=new",

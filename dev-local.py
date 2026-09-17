@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import subprocess
+import subprocess  # nosec B404: this developer helper intentionally delegates to uv.
 import sys
 from pathlib import Path
 
@@ -29,7 +29,7 @@ def main() -> int:
         str(overrides_file),
         *sys.argv[1:],
     ]
-    return subprocess.run(command, check=False).returncode
+    return subprocess.run(command, check=False).returncode  # nosec B603
 
 
 if __name__ == "__main__":

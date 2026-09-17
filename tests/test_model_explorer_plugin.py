@@ -7,7 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import subprocess
+import subprocess  # nosec B404: tests execute local node commands.
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -3650,7 +3650,7 @@ queueMicrotask(() => {{
 }});
 """
 
-    completed = subprocess.run(
+    completed = subprocess.run(  # nosec B603: node path is discovered locally; no shell.
         [node, "-e", script],
         check=True,
         capture_output=True,

@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404: this maintenance script runs the upstream npm build.
 from pathlib import Path
 
 
@@ -32,7 +32,7 @@ def main() -> None:
 
 def _build_visualizer(ui_dir: Path) -> None:
     """Run the upstream custom-element npm package build."""
-    subprocess.run(
+    subprocess.run(  # nosec B603: npm path is resolved locally and shell is not used.
         [_platform_command("npm"), "run", "build-npm"],
         cwd=ui_dir,
         check=True,

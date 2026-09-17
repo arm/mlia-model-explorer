@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-_ESCAPED_SLASH_TOKEN = "___escaped_slash___"
+_ESCAPED_SLASH_TOKEN = "___escaped_slash___"  # nosec B105: sentinel string, not a secret.
 
 
 def graph_node_data_keys(graph: dict[str, Any]) -> set[str]:
