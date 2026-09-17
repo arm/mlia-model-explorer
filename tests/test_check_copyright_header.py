@@ -4,10 +4,13 @@
 
 import datetime
 import importlib.util
+import unittest
 from pathlib import Path
 from types import ModuleType
 
 import pytest
+
+_ASSERT = unittest.TestCase()
 
 
 def load_checker_module() -> ModuleType:
@@ -18,8 +21,8 @@ def load_checker_module() -> ModuleType:
         / "check_copyright_header.py"
     )
     spec = importlib.util.spec_from_file_location("check_copyright_header", module_path)
-    assert spec is not None
-    assert spec.loader is not None
+    _ASSERT.assertIsNot(spec, None)
+    _ASSERT.assertIsNot(spec.loader, None)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -44,7 +47,7 @@ def test_current_inline_header_passes(
 
     checker = checker_module.CopyrightHeaderChecker()
 
-    assert checker.check_files_have_updated_header([str(source_file)]) is True
+    _ASSERT.assertIs(checker.check_files_have_updated_header([str(source_file)]), True)
 
 
 def test_missing_header_fails(
@@ -58,8 +61,8 @@ def test_missing_header_fails(
 
     checker = checker_module.CopyrightHeaderChecker()
 
-    assert checker.check_files_have_updated_header([str(source_file)]) is False
-    assert "missing or out of date" in capsys.readouterr().out
+    _ASSERT.assertIs(checker.check_files_have_updated_header([str(source_file)]), False)
+    _ASSERT.assertIn("missing or out of date", capsys.readouterr().out)
 
 
 def test_outdated_header_fails(
@@ -76,8 +79,8 @@ def test_outdated_header_fails(
 
     checker = checker_module.CopyrightHeaderChecker()
 
-    assert checker.check_files_have_updated_header([str(source_file)]) is False
-    assert "missing or out of date" in capsys.readouterr().out
+    _ASSERT.assertIs(checker.check_files_have_updated_header([str(source_file)]), False)
+    _ASSERT.assertIn("missing or out of date", capsys.readouterr().out)
 
 
 def test_markdown_header_uses_second_line(
@@ -96,7 +99,9 @@ def test_markdown_header_uses_second_line(
 
     checker = checker_module.CopyrightHeaderChecker()
 
-    assert checker.check_files_have_updated_header([str(markdown_file)]) is True
+    _ASSERT.assertIs(
+        checker.check_files_have_updated_header([str(markdown_file)]), True
+    )
 
 
 def test_sidecar_header_takes_precedence(
@@ -113,7 +118,7 @@ def test_sidecar_header_takes_precedence(
 
     checker = checker_module.CopyrightHeaderChecker()
 
-    assert checker.check_files_have_updated_header([str(yaml_file)]) is True
+    _ASSERT.assertIs(checker.check_files_have_updated_header([str(yaml_file)]), True)
 
 
 def test_json_requires_sidecar(
@@ -127,8 +132,8 @@ def test_json_requires_sidecar(
 
     checker = checker_module.CopyrightHeaderChecker()
 
-    assert checker.check_files_have_updated_header([str(json_file)]) is False
-    assert "requires a sidecar" in capsys.readouterr().out
+    _ASSERT.assertIs(checker.check_files_have_updated_header([str(json_file)]), False)
+    _ASSERT.assertIn("requires a sidecar", capsys.readouterr().out)
 
 
 def test_conflicting_inline_and_sidecar_headers_fail(
@@ -150,8 +155,8 @@ def test_conflicting_inline_and_sidecar_headers_fail(
 
     checker = checker_module.CopyrightHeaderChecker()
 
-    assert checker.check_files_have_updated_header([str(yaml_file)]) is False
-    assert "conflict" in capsys.readouterr().out
+    _ASSERT.assertIs(checker.check_files_have_updated_header([str(yaml_file)]), False)
+    _ASSERT.assertIn("conflict", capsys.readouterr().out)
 
 
 def test_matching_inline_and_sidecar_headers_pass(
@@ -168,14 +173,16 @@ def test_matching_inline_and_sidecar_headers_pass(
 
     checker = checker_module.CopyrightHeaderChecker()
 
-    assert checker.check_files_have_updated_header([str(yaml_file)]) is True
+    _ASSERT.assertIs(checker.check_files_have_updated_header([str(yaml_file)]), True)
 
 
 def test_missing_files_are_skipped(checker_module: ModuleType) -> None:
     """Ignore deleted files supplied by a diff."""
     checker = checker_module.CopyrightHeaderChecker()
 
-    assert checker.check_files_have_updated_header(["missing-file.txt"]) is True
+    _ASSERT.assertIs(
+        checker.check_files_have_updated_header(["missing-file.txt"]), True
+    )
 
 
 def test_license_text_files_are_skipped(
@@ -191,4 +198,6 @@ def test_license_text_files_are_skipped(
 
     checker = checker_module.CopyrightHeaderChecker()
 
-    assert checker.check_files_have_updated_header(["LICENSES/Apache-2.0.txt"])
+    _ASSERT.assertTrue(
+        checker.check_files_have_updated_header(["LICENSES/Apache-2.0.txt"])
+    )

@@ -7,6 +7,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   PYTHON_VERSION: "3.10"
 
@@ -17,10 +20,6 @@ env:
   UV_TOOL_DIR: ${{ github.workspace }}/.uv-tools-ci-${{ github.run_id }}-${{ github.run_attempt }}
   UV_TOOL_BIN_DIR: ${{ github.workspace }}/.uv-bin-ci-${{ github.run_id }}-${{ github.run_attempt }}
 
-  VAULT_COMMON_CI_SECRETS: &vault-common-ci-secrets |
-    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
-    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | UV_INDEX_INTERNAL_USERNAME ;
-    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_PASSWORD | UV_INDEX_INTERNAL_PASSWORD
 
 jobs:
   lint:
@@ -29,22 +28,27 @@ jobs:
     steps:
       - name: Import secrets from Vault
         if: ${{ github.repository_owner != 'arm' }}
-        uses: hashicorp/vault-action@v4
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4
         with:
           url: ${{ secrets.VAULT_URL }}
           method: approle
           roleId: ${{ secrets.VAULT_ROLE_ID }}
           secretId: ${{ secrets.VAULT_SECRET_ID }}
           namespace: iac-expkits/prod
-          secrets: *vault-common-ci-secrets
-      - uses: actions/checkout@v4
+          secrets: |
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | UV_INDEX_INTERNAL_USERNAME ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_PASSWORD | UV_INDEX_INTERNAL_PASSWORD
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 2
-      - uses: astral-sh/setup-uv@v5
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
+          enable-cache: false
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Cache pre-commit environments
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ~/.cache/pre-commit
           key: pre-commit|${{ runner.os }}|${{ env.PYTHON_VERSION }}|${{ hashFiles('.pre-commit-config.yaml') }}
@@ -60,17 +64,23 @@ jobs:
     steps:
       - name: Import secrets from Vault
         if: ${{ github.repository_owner != 'arm' }}
-        uses: hashicorp/vault-action@v4
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4
         with:
           url: ${{ secrets.VAULT_URL }}
           method: approle
           roleId: ${{ secrets.VAULT_ROLE_ID }}
           secretId: ${{ secrets.VAULT_SECRET_ID }}
           namespace: iac-expkits/prod
-          secrets: *vault-common-ci-secrets
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+          secrets: |
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | UV_INDEX_INTERNAL_USERNAME ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_PASSWORD | UV_INDEX_INTERNAL_PASSWORD
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          enable-cache: false
           python-version: ${{ env.PYTHON_VERSION }}
       - run: uv build
 
@@ -85,26 +95,32 @@ jobs:
     steps:
       - name: Import secrets from Vault
         if: ${{ github.repository_owner != 'arm' }}
-        uses: hashicorp/vault-action@v4
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4
         with:
           url: ${{ secrets.VAULT_URL }}
           method: approle
           roleId: ${{ secrets.VAULT_ROLE_ID }}
           secretId: ${{ secrets.VAULT_SECRET_ID }}
           namespace: iac-expkits/prod
-          secrets: *vault-common-ci-secrets
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+          secrets: |
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | UV_INDEX_INTERNAL_USERNAME ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_PASSWORD | UV_INDEX_INTERNAL_PASSWORD
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          enable-cache: false
           python-version: ${{ matrix.python-version }}
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22"
           package-manager-cache: false
       - name: Set up Chrome
         if: runner.os == 'Linux' && runner.arch == 'X64'
-        uses: browser-actions/setup-chrome@v2
+        uses: browser-actions/setup-chrome@48483d551c22a1fe6154c6a195ccc6d5773dc8c4 # v2
         with:
           chrome-version: stable
       - run: uv sync --no-sources --extra onnx --group test
@@ -124,7 +140,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-report
           path: coverage.xml

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -12,6 +13,8 @@ import pytest
 from mlia.core.errors import UnsupportedConfigurationError
 
 from mlia.model_explorer._artifacts import source_mapping, source_model
+
+_ASSERT = unittest.TestCase()
 
 
 def _source_node(
@@ -85,7 +88,7 @@ def _mapping(
     mapping = source_mapping._source_operator_node_ids(
         Path("model.onnx"), graph_collection
     )
-    assert loads == [Path("model.onnx")]
+    _ASSERT.assertEqual(loads, [Path("model.onnx")])
     return mapping
 
 
@@ -102,7 +105,7 @@ def test_named_node_requires_matching_name_output_and_label(
         _graph_collection([_adapter_node("named", "Identity", "named_out")]),
     )
 
-    assert mapping == {"source_operator/0": [_ref("main", "named")]}
+    _ASSERT.assertEqual(mapping, {"source_operator/0": [_ref("main", "named")]})
 
 
 def test_duplicate_source_names_use_output_and_label_evidence(
@@ -124,10 +127,13 @@ def test_duplicate_source_names_use_output_and_label_evidence(
         ),
     )
 
-    assert mapping == {
-        "source_operator/0": [_ref("main", "dup")],
-        "source_operator/1": [_ref("main", "dup_1")],
-    }
+    _ASSERT.assertEqual(
+        mapping,
+        {
+            "source_operator/0": [_ref("main", "dup")],
+            "source_operator/1": [_ref("main", "dup_1")],
+        },
+    )
 
 
 def test_unnamed_node_uses_actual_adapter_id_and_output_tag(
@@ -139,7 +145,7 @@ def test_unnamed_node_uses_actual_adapter_id_and_output_tag(
         _graph_collection([_adapter_node("node_7", "Identity", "y")]),
     )
 
-    assert mapping == {"source_operator/0": [_ref("main", "node_7")]}
+    _ASSERT.assertEqual(mapping, {"source_operator/0": [_ref("main", "node_7")]})
 
 
 def test_multiple_outputs_ignore_omitted_optional_output(
@@ -169,7 +175,7 @@ def test_multiple_outputs_ignore_omitted_optional_output(
         ),
     )
 
-    assert mapping == {"source_operator/0": [_ref("main", "node")]}
+    _ASSERT.assertEqual(mapping, {"source_operator/0": [_ref("main", "node")]})
 
 
 def test_adapter_only_input_output_and_initializer_nodes_are_ignored(
@@ -189,7 +195,7 @@ def test_adapter_only_input_output_and_initializer_nodes_are_ignored(
         ),
     )
 
-    assert mapping == {"source_operator/0": [_ref("main", "node")]}
+    _ASSERT.assertEqual(mapping, {"source_operator/0": [_ref("main", "node")]})
 
 
 def test_missing_tensor_tags_block_unnamed_node_mapping(
@@ -347,10 +353,14 @@ def test_real_adapter_handles_initialized_input_and_duplicate_names(tmp_path) ->
     )
     mapping = source_mapping._source_operator_node_ids(model_path, graph_collection)
 
-    assert "InitializedInput" in {
-        node["label"] for node in graph_collection["graphs"][0]["nodes"]
-    }
-    assert mapping == {
-        "source_operator/0": [_ref("main", "dup")],
-        "source_operator/1": [_ref("main", "dup_1")],
-    }
+    _ASSERT.assertIn(
+        "InitializedInput",
+        {node["label"] for node in graph_collection["graphs"][0]["nodes"]},
+    )
+    _ASSERT.assertEqual(
+        mapping,
+        {
+            "source_operator/0": [_ref("main", "dup")],
+            "source_operator/1": [_ref("main", "dup_1")],
+        },
+    )

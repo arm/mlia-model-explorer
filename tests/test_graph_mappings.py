@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -20,6 +21,8 @@ from mlia.model_explorer._artifacts import navigation as navigation_module
 from mlia.model_explorer._artifacts import source_model as source_model_module
 from mlia.model_explorer.artifacts import ModelExplorerArtifacts, write_artifacts
 from mlia.model_explorer.bundler import build_artifacts_bundle
+
+_ASSERT = unittest.TestCase()
 
 
 def _node(node_id: str, namespace: str) -> dict:
@@ -123,10 +126,13 @@ def test_empty_output_emits_empty_graph_mappings(tmp_path: Path, monkeypatch) ->
         [],
     )
 
-    assert _read_json(generated.sync_navigation) == {
-        "type": "sync_navigation",
-        "graphMappings": [],
-    }
+    _ASSERT.assertEqual(
+        _read_json(generated.sync_navigation),
+        {
+            "type": "sync_navigation",
+            "graphMappings": [],
+        },
+    )
 
 
 def test_exact_groups_map_bidirectionally_and_between_generated_graphs(
@@ -161,19 +167,28 @@ def test_exact_groups_map_bidirectionally_and_between_generated_graphs(
     mappings = _mapping_by_source(generated)
 
     source_to = mappings[("Source Model", "main", "source___group___")]
-    assert source_to == {
-        "outer_inner": {
-            "outer_inner-main": ["outer/inner___group___"],
+    _ASSERT.assertEqual(
+        source_to,
+        {
+            "outer_inner": {
+                "outer_inner-main": ["outer/inner___group___"],
+            },
+            "peer": {"peer-main": ["peer___group___"]},
         },
-        "peer": {"peer-main": ["peer___group___"]},
-    }
+    )
     inner_to = mappings[("outer_inner", "outer_inner-main", "outer/inner___group___")]
-    assert inner_to == {
-        "Source Model": {"main": ["source___group___"]},
-        "peer": {"peer-main": ["peer___group___"]},
-    }
+    _ASSERT.assertEqual(
+        inner_to,
+        {
+            "Source Model": {"main": ["source___group___"]},
+            "peer": {"peer-main": ["peer___group___"]},
+        },
+    )
     peer_to = mappings[("peer", "peer-main", "peer___group___")]
-    assert peer_to["outer_inner"] == {"outer_inner-main": ["outer/inner___group___"]}
+    _ASSERT.assertEqual(
+        peer_to["outer_inner"],
+        {"outer_inner-main": ["outer/inner___group___"]},
+    )
 
 
 def test_deepest_exact_target_is_selected_for_single_child_chain(
@@ -207,7 +222,10 @@ def test_deepest_exact_target_is_selected_for_single_child_chain(
     source_to = _mapping_by_source(generated)[
         ("Source Model", "main", "source___group___")
     ]
-    assert source_to["outer_inner"]["outer_inner-main"] == ["outer/inner___group___"]
+    _ASSERT.assertEqual(
+        source_to["outer_inner"]["outer_inner-main"],
+        ["outer/inner___group___"],
+    )
 
 
 def test_leaf_list_fallback_preserves_target_graph_order(
@@ -238,11 +256,14 @@ def test_leaf_list_fallback_preserves_target_graph_order(
     source_to = _mapping_by_source(generated)[
         ("Source Model", "main", "source___group___")
     ]
-    assert source_to == {
-        "partition": {
-            "partition-main": ["0__op_0", "0__op_1"],
-        }
-    }
+    _ASSERT.assertEqual(
+        source_to,
+        {
+            "partition": {
+                "partition-main": ["0__op_0", "0__op_1"],
+            }
+        },
+    )
 
 
 def test_same_ids_in_different_source_graphs_have_explicit_empty_routes(
@@ -264,29 +285,36 @@ def test_same_ids_in_different_source_graphs_have_explicit_empty_routes(
     )
     mappings = _mapping_by_source(generated)
 
-    assert mappings[("Source Model", "first/subgraph", "shared___group___")] == {
-        "partition": {
-            "partition-first/subgraph": ["partition___group___"],
-            r"partition-first\subgraph": [],
+    _ASSERT.assertEqual(
+        mappings[("Source Model", "first/subgraph", "shared___group___")],
+        {
+            "partition": {
+                "partition-first/subgraph": ["partition___group___"],
+                r"partition-first\subgraph": [],
+            },
+            "Source Model": {r"first\subgraph": []},
         },
-        "Source Model": {r"first\subgraph": []},
-    }
-    assert mappings[("Source Model", r"first\subgraph", "shared___group___")] == {
-        "Source Model": {"first/subgraph": []},
-        "partition": {
-            "partition-first/subgraph": [],
-            r"partition-first\subgraph": ["partition___group___"],
+    )
+    _ASSERT.assertEqual(
+        mappings[("Source Model", r"first\subgraph", "shared___group___")],
+        {
+            "Source Model": {"first/subgraph": []},
+            "partition": {
+                "partition-first/subgraph": [],
+                r"partition-first\subgraph": ["partition___group___"],
+            },
         },
-    }
-    assert mappings[
-        ("partition", "partition-first/subgraph", "partition___group___")
-    ] == {
-        "Source Model": {
-            "first/subgraph": ["shared___group___"],
-            r"first\subgraph": [],
+    )
+    _ASSERT.assertEqual(
+        mappings[("partition", "partition-first/subgraph", "partition___group___")],
+        {
+            "Source Model": {
+                "first/subgraph": ["shared___group___"],
+                r"first\subgraph": [],
+            },
+            "partition": {r"partition-first\subgraph": []},
         },
-        "partition": {r"partition-first\subgraph": []},
-    }
+    )
 
     projection_identities = {
         ("Source Model", "first/subgraph"),
@@ -300,8 +328,10 @@ def test_same_ids_in_different_source_graphs_have_explicit_empty_routes(
             for collection_label, graphs_by_id in targets.items()
             for graph_id in graphs_by_id
         ]
-        assert target_identities == list(dict.fromkeys(target_identities))
-        assert set(target_identities) == projection_identities - {source[:2]}
+        _ASSERT.assertEqual(target_identities, list(dict.fromkeys(target_identities)))
+        _ASSERT.assertEqual(
+            set(target_identities), projection_identities - {source[:2]}
+        )
 
 
 def test_repeated_group_ids_across_results_stay_collection_qualified(
@@ -321,21 +351,27 @@ def test_repeated_group_ids_across_results_stay_collection_qualified(
         [{"id": "main", "nodes": [_node("0__op_0", "same")]}],
         [result, {**result, "kind": "memory"}],
     )
-    assert [path.name for path in generated.generated_models] == [
-        "model-hierarchy-partition-result-1.json",
-        "model-hierarchy-partition-result-2.json",
-    ]
+    _ASSERT.assertEqual(
+        [path.name for path in generated.generated_models],
+        [
+            "model-hierarchy-partition-result-1.json",
+            "model-hierarchy-partition-result-2.json",
+        ],
+    )
     mappings = _mapping_by_source(generated)
 
     source_to = mappings[("Source Model", "main", "same___group___")]
-    assert source_to == {
-        "partition [performance result 1]": {
-            "partition-result-1-main": ["same___group___"],
+    _ASSERT.assertEqual(
+        source_to,
+        {
+            "partition [performance result 1]": {
+                "partition-result-1-main": ["same___group___"],
+            },
+            "partition [memory result 2]": {
+                "partition-result-2-main": ["same___group___"],
+            },
         },
-        "partition [memory result 2]": {
-            "partition-result-2-main": ["same___group___"],
-        },
-    }
+    )
     first_generated_to = mappings[
         (
             "partition [performance result 1]",
@@ -343,12 +379,15 @@ def test_repeated_group_ids_across_results_stay_collection_qualified(
             "same___group___",
         )
     ]
-    assert first_generated_to == {
-        "Source Model": {"main": ["same___group___"]},
-        "partition [memory result 2]": {
-            "partition-result-2-main": ["same___group___"],
+    _ASSERT.assertEqual(
+        first_generated_to,
+        {
+            "Source Model": {"main": ["same___group___"]},
+            "partition [memory result 2]": {
+                "partition-result-2-main": ["same___group___"],
+            },
         },
-    }
+    )
 
 
 def test_escaped_namespace_paths_are_preserved(tmp_path: Path, monkeypatch) -> None:
@@ -375,10 +414,13 @@ def test_escaped_namespace_paths_are_preserved(tmp_path: Path, monkeypatch) -> N
         and entry["from"]["nodeId"].endswith("___group___")
     ]
 
-    assert source_ids == [
-        r"source\/part___group___",
-        r"source\/part/child___group___",
-    ]
+    _ASSERT.assertEqual(
+        source_ids,
+        [
+            r"source\/part___group___",
+            r"source\/part/child___group___",
+        ],
+    )
 
 
 def test_graph_mappings_include_leaf_sources_and_are_deterministic(
@@ -407,13 +449,17 @@ def test_graph_mappings_include_leaf_sources_and_are_deterministic(
     )
 
     first_data = _read_json(first.sync_navigation)
-    assert first_data == _read_json(second.sync_navigation)
-    assert set(first_data) == {"type", "graphMappings"}
-    assert first_data["type"] == "sync_navigation"
-    assert all(set(entry) == {"from", "to"} for entry in first_data["graphMappings"])
-    assert any(
-        not entry["from"]["nodeId"].endswith("___group___")
-        for entry in first_data["graphMappings"]
+    _ASSERT.assertEqual(first_data, _read_json(second.sync_navigation))
+    _ASSERT.assertEqual(set(first_data), {"type", "graphMappings"})
+    _ASSERT.assertEqual(first_data["type"], "sync_navigation")
+    _ASSERT.assertTrue(
+        all(set(entry) == {"from", "to"} for entry in first_data["graphMappings"]),
+    )
+    _ASSERT.assertTrue(
+        any(
+            not entry["from"]["nodeId"].endswith("___group___")
+            for entry in first_data["graphMappings"]
+        ),
     )
     source_refs = [
         (
@@ -423,12 +469,14 @@ def test_graph_mappings_include_leaf_sources_and_are_deterministic(
         )
         for entry in first_data["graphMappings"]
     ]
-    assert len(source_refs) == len(set(source_refs))
-    assert all(
-        len(node_ids) == len(dict.fromkeys(node_ids))
-        for entry in first_data["graphMappings"]
-        for graphs_by_id in entry["to"].values()
-        for node_ids in graphs_by_id.values()
+    _ASSERT.assertEqual(len(source_refs), len(set(source_refs)))
+    _ASSERT.assertTrue(
+        all(
+            len(node_ids) == len(dict.fromkeys(node_ids))
+            for entry in first_data["graphMappings"]
+            for graphs_by_id in entry["to"].values()
+            for node_ids in graphs_by_id.values()
+        ),
     )
 
 
@@ -455,7 +503,7 @@ def test_bundle_contains_graph_mappings_artifact_unchanged(
     end = html.index("</script>", start)
     bundle_data = json.loads(html[start:end])
 
-    assert bundle_data["visualizerConfig"]["syncNavigationData"] == expected
+    _ASSERT.assertEqual(bundle_data["visualizerConfig"]["syncNavigationData"], expected)
 
 
 def test_colliding_hierarchy_kind_paths_get_distinct_artifact_identities(
@@ -484,26 +532,38 @@ def test_colliding_hierarchy_kind_paths_get_distinct_artifact_identities(
         [_result(entity_kinds, entities)],
     )
 
-    assert [path.name for path in generated.generated_models] == [
-        "model-hierarchy-a_b-result-1-hierarchy-1.json",
-        "model-hierarchy-a_b-result-1-hierarchy-2.json",
-    ]
+    _ASSERT.assertEqual(
+        [path.name for path in generated.generated_models],
+        [
+            "model-hierarchy-a_b-result-1-hierarchy-1.json",
+            "model-hierarchy-a_b-result-1-hierarchy-2.json",
+        ],
+    )
     collections = [_read_json(path) for path in generated.generated_models]
-    assert [collection["label"] for collection in collections] == [
-        "a_b [performance result 1, hierarchy 1: a > b]",
-        "a_b [performance result 1, hierarchy 2: a_b]",
-    ]
-    assert [collection["graphs"][0]["id"] for collection in collections] == [
-        "a_b-result-1-hierarchy-1-main",
-        "a_b-result-1-hierarchy-2-main",
-    ]
+    _ASSERT.assertEqual(
+        [collection["label"] for collection in collections],
+        [
+            "a_b [performance result 1, hierarchy 1: a > b]",
+            "a_b [performance result 1, hierarchy 2: a_b]",
+        ],
+    )
+    _ASSERT.assertEqual(
+        [collection["graphs"][0]["id"] for collection in collections],
+        [
+            "a_b-result-1-hierarchy-1-main",
+            "a_b-result-1-hierarchy-2-main",
+        ],
+    )
     source_targets = _mapping_by_source(generated)[
         ("Source Model", "main", "source___group___")
     ]
-    assert set(source_targets) == {
-        "a_b [performance result 1, hierarchy 1: a > b]",
-        "a_b [performance result 1, hierarchy 2: a_b]",
-    }
+    _ASSERT.assertEqual(
+        set(source_targets),
+        {
+            "a_b [performance result 1, hierarchy 1: a > b]",
+            "a_b [performance result 1, hierarchy 2: a_b]",
+        },
+    )
 
 
 def test_generated_subgraph_links_and_all_cross_artifact_ids_are_rewritten(
@@ -554,18 +614,25 @@ def test_generated_subgraph_links_and_all_cross_artifact_ids_are_rewritten(
     generated_collection = _read_json(generated.generated_models[0])
     generated_graphs = {graph["id"]: graph for graph in generated_collection["graphs"]}
 
-    assert set(generated_graphs) == {
-        "partition-root/graph",
-        r"partition-child\graph",
-        "partition-nested",
-    }
-    assert generated_graphs["partition-root/graph"]["nodes"][0]["subgraphIds"] == [
-        r"partition-child\graph",
-        "partition-nested",
-    ]
-    assert generated_graphs[r"partition-child\graph"]["nodes"][0]["subgraphIds"] == [
-        "partition-nested"
-    ]
+    _ASSERT.assertEqual(
+        set(generated_graphs),
+        {
+            "partition-root/graph",
+            r"partition-child\graph",
+            "partition-nested",
+        },
+    )
+    _ASSERT.assertEqual(
+        generated_graphs["partition-root/graph"]["nodes"][0]["subgraphIds"],
+        [
+            r"partition-child\graph",
+            "partition-nested",
+        ],
+    )
+    _ASSERT.assertEqual(
+        generated_graphs[r"partition-child\graph"]["nodes"][0]["subgraphIds"],
+        ["partition-nested"],
+    )
 
     mappings = _read_json(generated.entity_node_mappings)["results"][0]["mappings"]
     generated_leaf_graph_ids = {
@@ -574,35 +641,40 @@ def test_generated_subgraph_links_and_all_cross_artifact_ids_are_rewritten(
         if mapping["node"]["collectionLabel"] == "partition"
         and mapping["node"]["nodeId"].startswith("0__op_")
     }
-    assert generated_leaf_graph_ids == set(generated_graphs)
+    _ASSERT.assertEqual(generated_leaf_graph_ids, set(generated_graphs))
 
     cycles = _read_json(
         generated.root / "node-data" / "model-hierarchy-partition" / "cycles.json"
     )
-    assert set(cycles) == set(generated_graphs)
-    assert all(
-        data["results"] == {"partition": {"value": 7}} for data in cycles.values()
+    _ASSERT.assertEqual(set(cycles), set(generated_graphs))
+    _ASSERT.assertTrue(
+        all(data["results"] == {"partition": {"value": 7}} for data in cycles.values()),
     )
 
     index = build_artifacts_bundle(generated.root)
     bundle_data = _read_bundle_data(index)
-    assert bundle_data["initialUiState"]["paneStates"][0]["selectedGraphId"] == (
-        "root/graph"
+    _ASSERT.assertEqual(
+        bundle_data["initialUiState"]["paneStates"][0]["selectedGraphId"],
+        "root/graph",
     )
-    assert bundle_data["initialUiState"]["paneStates"][1]["selectedGraphId"] == (
-        "partition-root/graph"
+    _ASSERT.assertEqual(
+        bundle_data["initialUiState"]["paneStates"][1]["selectedGraphId"],
+        "partition-root/graph",
     )
     sync_targets = _mapping_by_source(generated)[
         ("Source Model", r"child\graph", "source___group___")
     ]
-    assert sync_targets == {
-        "Source Model": {"root/graph": [], "nested": []},
-        "partition": {
-            "partition-root/graph": [],
-            r"partition-child\graph": ["partition___group___"],
-            "partition-nested": [],
+    _ASSERT.assertEqual(
+        sync_targets,
+        {
+            "Source Model": {"root/graph": [], "nested": []},
+            "partition": {
+                "partition-root/graph": [],
+                r"partition-child\graph": ["partition___group___"],
+                "partition-nested": [],
+            },
         },
-    }
+    )
 
 
 @pytest.mark.parametrize(
@@ -640,7 +712,7 @@ def test_source_namespace_projection_matches_model_explorer_normalization(
         if entry["from"]["collectionLabel"] == "Source Model"
         and entry["from"]["nodeId"].endswith("___group___")
     ]
-    assert source_group_ids == expected_groups
+    _ASSERT.assertEqual(source_group_ids, expected_groups)
 
 
 @pytest.mark.parametrize(
@@ -698,7 +770,7 @@ def test_generated_namespace_references_match_runtime_normalization(
         if entry["from"]["collectionLabel"] == "outer_inner"
         and entry["from"]["nodeId"].endswith("___group___")
     }
-    assert generated_from_ids == expected_group_ids
+    _ASSERT.assertEqual(generated_from_ids, expected_group_ids)
     entity_mappings = _read_json(generated.entity_node_mappings)["results"][0][
         "mappings"
     ]
@@ -708,14 +780,15 @@ def test_generated_namespace_references_match_runtime_normalization(
         if mapping["node"]["collectionLabel"] == "outer_inner"
         and mapping["node"]["nodeId"].endswith("___group___")
     }
-    assert mapped_group_ids <= expected_group_ids
-    assert f"{expected_groups[-1]}___group___" in mapped_group_ids
+    _ASSERT.assertLessEqual(mapped_group_ids, expected_group_ids)
+    _ASSERT.assertIn(f"{expected_groups[-1]}___group___", mapped_group_ids)
     cycles = _read_json(
         generated.root / "node-data" / "model-hierarchy-outer_inner" / "cycles.json"
     )
-    assert cycles["outer_inner-main"]["results"] == {
-        expected_groups[-1]: {"value": 9}
-    }
+    _ASSERT.assertEqual(
+        cycles["outer_inner-main"]["results"],
+        {expected_groups[-1]: {"value": 9}},
+    )
 
 
 def test_normalized_entity_sibling_collisions_stay_distinct_across_artifacts(
@@ -762,31 +835,44 @@ def test_normalized_entity_sibling_collisions_stay_distinct_across_artifacts(
 
     generated_collection = _read_json(generated.generated_models[0])
     generated_graph = generated_collection["graphs"][0]
-    assert [node["namespace"] for node in generated_graph["nodes"]] == [
-        "legacy;actual [legacy-entity]",
-        "actual [actual-entity]",
-    ]
+    _ASSERT.assertEqual(
+        [node["namespace"] for node in generated_graph["nodes"]],
+        [
+            "legacy;actual [legacy-entity]",
+            "actual [actual-entity]",
+        ],
+    )
     generated_group_ids = {
         entry["from"]["nodeId"]
         for entry in _graph_mappings(generated)
         if entry["from"]["collectionLabel"] == "partition"
         and entry["from"]["nodeId"].endswith("___group___")
     }
-    assert generated_group_ids == {
-        "actual [legacy-entity]___group___",
-        "actual [actual-entity]___group___",
-    }
+    _ASSERT.assertEqual(
+        generated_group_ids,
+        {
+            "actual [legacy-entity]___group___",
+            "actual [actual-entity]___group___",
+        },
+    )
 
     mappings = _mapping_by_source(generated)
-    assert mappings[("Source Model", "main", "source___group___")]["partition"] == {
-        "partition-main": ["0__op_0", "0__op_1"]
-    }
-    assert mappings[
-        ("partition", "partition-main", "actual [legacy-entity]___group___")
-    ]["Source Model"] == {"main": ["0__op_0"]}
-    assert mappings[
-        ("partition", "partition-main", "actual [actual-entity]___group___")
-    ]["Source Model"] == {"main": ["0__op_1"]}
+    _ASSERT.assertEqual(
+        mappings[("Source Model", "main", "source___group___")]["partition"],
+        {"partition-main": ["0__op_0", "0__op_1"]},
+    )
+    _ASSERT.assertEqual(
+        mappings[("partition", "partition-main", "actual [legacy-entity]___group___")][
+            "Source Model"
+        ],
+        {"main": ["0__op_0"]},
+    )
+    _ASSERT.assertEqual(
+        mappings[("partition", "partition-main", "actual [actual-entity]___group___")][
+            "Source Model"
+        ],
+        {"main": ["0__op_1"]},
+    )
 
     entity_mappings = _read_json(generated.entity_node_mappings)["results"][0][
         "mappings"
@@ -797,17 +883,23 @@ def test_normalized_entity_sibling_collisions_stay_distinct_across_artifacts(
         if mapping["node"]["collectionLabel"] == "partition"
         and mapping["node"]["nodeId"].endswith("___group___")
     }
-    assert mapped_entities_by_node == {
-        "actual [legacy-entity]___group___": "legacy-entity",
-        "actual [actual-entity]___group___": "actual-entity",
-    }
+    _ASSERT.assertEqual(
+        mapped_entities_by_node,
+        {
+            "actual [legacy-entity]___group___": "legacy-entity",
+            "actual [actual-entity]___group___": "actual-entity",
+        },
+    )
     cycles = _read_json(
         generated.root / "node-data" / "model-hierarchy-partition" / "cycles.json"
     )
-    assert cycles["partition-main"]["results"] == {
-        "actual [actual-entity]": {"value": 20},
-        "actual [legacy-entity]": {"value": 10},
-    }
+    _ASSERT.assertEqual(
+        cycles["partition-main"]["results"],
+        {
+            "actual [actual-entity]": {"value": 20},
+            "actual [legacy-entity]": {"value": 10},
+        },
+    )
 
 
 def test_cross_parent_runtime_collisions_stay_distinct_across_all_artifacts(
@@ -871,28 +963,31 @@ def test_cross_parent_runtime_collisions_stay_distinct_across_all_artifacts(
     }
     generated_collection = _read_json(generated.generated_models[0])
     generated_graph = generated_collection["graphs"][0]
-    assert {node["namespace"] for node in generated_graph["nodes"]} == {
-        "parent1/x%3Bshared [child%2F1]",
-        "parent2/y%3Bshared [child%3B2]",
-    }
-    assert _read_json(reordered.generated_models[0]) == generated_collection
+    _ASSERT.assertEqual(
+        {node["namespace"] for node in generated_graph["nodes"]},
+        {
+            "parent1/x%3Bshared [child%2F1]",
+            "parent2/y%3Bshared [child%3B2]",
+        },
+    )
+    _ASSERT.assertEqual(_read_json(reordered.generated_models[0]), generated_collection)
 
     cycles = _read_json(
         generated.root / "node-data" / "model-hierarchy-outer_inner" / "cycles.json"
     )
-    assert cycles["outer_inner-main"]["results"] == {
-        "parent1": {"value": 1},
-        "parent1/x%3Bshared [child%2F1]": {"value": 10},
-        "parent2": {"value": 2},
-        "parent2/y%3Bshared [child%3B2]": {"value": 20},
-    }
-    reordered_cycles = _read_json(
-        reordered.root
-        / "node-data"
-        / "model-hierarchy-outer_inner"
-        / "cycles.json"
+    _ASSERT.assertEqual(
+        cycles["outer_inner-main"]["results"],
+        {
+            "parent1": {"value": 1},
+            "parent1/x%3Bshared [child%2F1]": {"value": 10},
+            "parent2": {"value": 2},
+            "parent2/y%3Bshared [child%3B2]": {"value": 20},
+        },
     )
-    assert reordered_cycles == cycles
+    reordered_cycles = _read_json(
+        reordered.root / "node-data" / "model-hierarchy-outer_inner" / "cycles.json"
+    )
+    _ASSERT.assertEqual(reordered_cycles, cycles)
 
     entity_mappings = _read_json(generated.entity_node_mappings)["results"][0][
         "mappings"
@@ -903,14 +998,18 @@ def test_cross_parent_runtime_collisions_stay_distinct_across_all_artifacts(
         if mapping["node"]["collectionLabel"] == "outer_inner"
         and mapping["node"]["nodeId"].endswith("___group___")
     }
-    assert mapped_groups == {
-        "child/1": "parent1/x%3Bshared [child%2F1]___group___",
-        "child;2": "parent2/y%3Bshared [child%3B2]___group___",
-        "parent-1": "parent1___group___",
-        "parent-2": "parent2___group___",
-    }
-    assert _read_json(reordered.entity_node_mappings) == _read_json(
-        generated.entity_node_mappings
+    _ASSERT.assertEqual(
+        mapped_groups,
+        {
+            "child/1": "parent1/x%3Bshared [child%2F1]___group___",
+            "child;2": "parent2/y%3Bshared [child%3B2]___group___",
+            "parent-1": "parent1___group___",
+            "parent-2": "parent2___group___",
+        },
+    )
+    _ASSERT.assertEqual(
+        _read_json(reordered.entity_node_mappings),
+        _read_json(generated.entity_node_mappings),
     )
 
     generated_routes = {
@@ -921,15 +1020,19 @@ def test_cross_parent_runtime_collisions_stay_distinct_across_all_artifacts(
         if entry["from"]["collectionLabel"] == "outer_inner"
         and entry["from"]["nodeId"].endswith("___group___")
     }
-    assert set(generated_routes) == expected_paths
-    assert generated_routes == {
-        "parent1": ["0__op_0"],
-        "parent1/x%3Bshared [child%2F1]": ["0__op_0"],
-        "parent2": ["0__op_1"],
-        "parent2/y%3Bshared [child%3B2]": ["0__op_1"],
-    }
-    assert _read_json(reordered.sync_navigation) == _read_json(
-        generated.sync_navigation
+    _ASSERT.assertEqual(set(generated_routes), expected_paths)
+    _ASSERT.assertEqual(
+        generated_routes,
+        {
+            "parent1": ["0__op_0"],
+            "parent1/x%3Bshared [child%2F1]": ["0__op_0"],
+            "parent2": ["0__op_1"],
+            "parent2/y%3Bshared [child%3B2]": ["0__op_1"],
+        },
+    )
+    _ASSERT.assertEqual(
+        _read_json(reordered.sync_navigation),
+        _read_json(generated.sync_navigation),
     )
 
 
@@ -981,13 +1084,16 @@ def test_secondary_cross_branch_collisions_reallocate_production_artifacts(
     )
 
     generated_graph = _read_json(generated.generated_models[0])["graphs"][0]
-    assert [node["namespace"] for node in generated_graph["nodes"]] == [
-        "parent1/MLIA entity a",
-        "parent2/y%3Bshared [b]",
-        "parent3/z%3Bshared [c]",
-        "parent1/x%3Bshared [a] [d]",
-        "parent1/x%3Bshared [a entity-id] [e]",
-    ]
+    _ASSERT.assertEqual(
+        [node["namespace"] for node in generated_graph["nodes"]],
+        [
+            "parent1/MLIA entity a",
+            "parent2/y%3Bshared [b]",
+            "parent3/z%3Bshared [c]",
+            "parent1/x%3Bshared [a] [d]",
+            "parent1/x%3Bshared [a entity-id] [e]",
+        ],
+    )
     generated_routes = {
         entry["from"]["nodeId"].removesuffix("___group___"): entry["to"][
             "Source Model"
@@ -996,16 +1102,19 @@ def test_secondary_cross_branch_collisions_reallocate_production_artifacts(
         if entry["from"]["collectionLabel"] == "outer_inner"
         and entry["from"]["nodeId"].endswith("___group___")
     }
-    assert generated_routes == {
-        "parent1": ["0__op_0", "0__op_3", "0__op_4"],
-        "parent1/MLIA entity a": ["0__op_0"],
-        "parent1/x%3Bshared [a entity-id] [e]": ["0__op_4"],
-        "parent1/x%3Bshared [a] [d]": ["0__op_3"],
-        "parent2": ["0__op_1"],
-        "parent2/y%3Bshared [b]": ["0__op_1"],
-        "parent3": ["0__op_2"],
-        "parent3/z%3Bshared [c]": ["0__op_2"],
-    }
+    _ASSERT.assertEqual(
+        generated_routes,
+        {
+            "parent1": ["0__op_0", "0__op_3", "0__op_4"],
+            "parent1/MLIA entity a": ["0__op_0"],
+            "parent1/x%3Bshared [a entity-id] [e]": ["0__op_4"],
+            "parent1/x%3Bshared [a] [d]": ["0__op_3"],
+            "parent2": ["0__op_1"],
+            "parent2/y%3Bshared [b]": ["0__op_1"],
+            "parent3": ["0__op_2"],
+            "parent3/z%3Bshared [c]": ["0__op_2"],
+        },
+    )
 
 
 def test_serialized_group_suffix_node_ids_remain_canonical_leaves(
@@ -1059,32 +1168,45 @@ def test_serialized_group_suffix_node_ids_remain_canonical_leaves(
         "Source Model",
         _read_json(generated.root / "models" / "model-source.json")["graphs"][0],
     )
-    assert [ref.node_id for ref in source_projection.ordered_leaf_refs] == [
-        "leaf___group___",
-        "ordinary",
-    ]
-    assert {
-        group.node_ref.node_id: group.ordered_leaf_ids
-        for group in source_projection.groups
-    } == {
-        "source___group___": ("leaf___group___", "ordinary"),
-        "source/enclosing___group___": ("leaf___group___", "ordinary"),
-    }
+    _ASSERT.assertEqual(
+        [ref.node_id for ref in source_projection.ordered_leaf_refs],
+        [
+            "leaf___group___",
+            "ordinary",
+        ],
+    )
+    _ASSERT.assertEqual(
+        {
+            group.node_ref.node_id: group.ordered_leaf_ids
+            for group in source_projection.groups
+        },
+        {
+            "source___group___": ("leaf___group___", "ordinary"),
+            "source/enclosing___group___": ("leaf___group___", "ordinary"),
+        },
+    )
 
     mappings = _mapping_by_source(generated)
     for source_group_id in (
         "source___group___",
         "source/enclosing___group___",
     ):
-        assert mappings[("Source Model", "main", source_group_id)]["partition"] == {
-            "partition-main": ["leaf___group___", "ordinary"]
-        }
-    assert mappings[
-        ("partition", "partition-main", "target suffix___group___")
-    ]["Source Model"] == {"main": ["leaf___group___"]}
-    assert mappings[
-        ("partition", "partition-main", "target ordinary___group___")
-    ]["Source Model"] == {"main": ["ordinary"]}
+        _ASSERT.assertEqual(
+            mappings[("Source Model", "main", source_group_id)]["partition"],
+            {"partition-main": ["leaf___group___", "ordinary"]},
+        )
+    _ASSERT.assertEqual(
+        mappings[("partition", "partition-main", "target suffix___group___")][
+            "Source Model"
+        ],
+        {"main": ["leaf___group___"]},
+    )
+    _ASSERT.assertEqual(
+        mappings[("partition", "partition-main", "target ordinary___group___")][
+            "Source Model"
+        ],
+        {"main": ["ordinary"]},
+    )
 
     entity_mappings = _read_json(generated.entity_node_mappings)["results"][0][
         "mappings"
@@ -1097,17 +1219,23 @@ def test_serialized_group_suffix_node_ids_remain_canonical_leaves(
         )
         for mapping in entity_mappings
     }
-    assert (
-        "Source Model",
-        "leaf___group___",
-        "source_operator/segment_0/spirv-0",
-    ) in mapped_nodes
-    assert (
-        "partition",
-        "leaf___group___",
-        "source_operator/segment_0/spirv-0",
-    ) in mapped_nodes
-    assert ("partition", "target suffix___group___", "suffix") in mapped_nodes
+    _ASSERT.assertIn(
+        (
+            "Source Model",
+            "leaf___group___",
+            "source_operator/segment_0/spirv-0",
+        ),
+        mapped_nodes,
+    )
+    _ASSERT.assertIn(
+        (
+            "partition",
+            "leaf___group___",
+            "source_operator/segment_0/spirv-0",
+        ),
+        mapped_nodes,
+    )
+    _ASSERT.assertIn(("partition", "target suffix___group___", "suffix"), mapped_nodes)
 
 
 def test_serialized_node_id_colliding_with_runtime_group_is_rejected() -> None:
@@ -1186,9 +1314,7 @@ def test_missing_generated_projection_is_rejected() -> None:
         Path("partition.json"),
         descriptor,
         {"label": "partition", "graphs": []},
-        artifact_models._GeneratedHierarchyProjection(
-            {}, {}, {}, {}, frozenset()
-        ),
+        artifact_models._GeneratedHierarchyProjection({}, {}, {}, {}, frozenset()),
     )
     source = {
         "label": "Source Model",
@@ -1251,15 +1377,16 @@ def test_repeated_deepest_exact_groups_are_all_returned() -> None:
                 frozenset({canonical_ref}),
             ),
         ),
-        terminal_complete_path_group_ids=frozenset(
-            {"x___group___", "y___group___"}
-        ),
+        terminal_complete_path_group_ids=frozenset({"x___group___", "y___group___"}),
     )
 
-    assert navigation_module._graph_mapping_target_ids(source_group, target) == [
-        "x___group___",
-        "y___group___",
-    ]
+    _ASSERT.assertEqual(
+        navigation_module._graph_mapping_target_ids(source_group, target),
+        [
+            "x___group___",
+            "y___group___",
+        ],
+    )
 
 
 def test_unequal_depth_complete_paths_all_receive_sync_navigation_targets(
@@ -1294,10 +1421,13 @@ def test_unequal_depth_complete_paths_all_receive_sync_navigation_targets(
     target_ids = _mapping_by_source(generated)[
         ("Source Model", "main", "source___group___")
     ]["layer"]["layer-main"]
-    assert target_ids == [
-        "Root/Deep___group___",
-        "Shallow___group___",
-    ]
+    _ASSERT.assertEqual(
+        target_ids,
+        [
+            "Root/Deep___group___",
+            "Shallow___group___",
+        ],
+    )
 
 
 def test_generated_projection_requires_explicit_complete_canonical_mapping() -> None:
@@ -1313,9 +1443,7 @@ def test_generated_projection_requires_explicit_complete_canonical_mapping() -> 
     ):
         graphs_module._graph_projection(origin, "generated", graph, {})
 
-    generated_ref = artifact_models._NodeRef(
-        "generated", "generated-main", "generated"
-    )
+    generated_ref = artifact_models._NodeRef("generated", "generated-main", "generated")
     unexpected_ref = artifact_models._NodeRef(
         "generated", "generated-main", "unexpected"
     )
@@ -1338,9 +1466,7 @@ def test_generated_artifact_rejects_inconsistent_forward_canonical_mapping() -> 
         0, "performance", hierarchy, "partition", "partition"
     )
     source_ref = artifact_models._NodeRef("Source Model", "main", "source")
-    generated_ref = artifact_models._NodeRef(
-        "partition", "partition-main", "generated"
-    )
+    generated_ref = artifact_models._NodeRef("partition", "partition-main", "generated")
     artifact = artifact_models._GeneratedModelArtifact(
         Path("partition.json"),
         descriptor,
@@ -1363,9 +1489,7 @@ def test_generated_artifact_rejects_inconsistent_forward_canonical_mapping() -> 
     )
     source = {
         "label": "Source Model",
-        "graphs": [
-            {"id": "main", "nodes": [{"id": "source", "namespace": "source"}]}
-        ],
+        "graphs": [{"id": "main", "nodes": [{"id": "source", "namespace": "source"}]}],
     }
 
     with pytest.raises(RuntimeError, match="forward canonical mapping"):
@@ -1428,8 +1552,8 @@ def test_single_path_self_edge_is_preserved(tmp_path: Path, monkeypatch) -> None
     )
 
     node = _read_json(generated.generated_models[0])["graphs"][0]["nodes"][0]
-    assert node["id"] == "0__op_0"
-    assert node["incomingEdges"] == [{"sourceNodeId": "0__op_0"}]
+    _ASSERT.assertEqual(node["id"], "0__op_0")
+    _ASSERT.assertEqual(node["incomingEdges"], [{"sourceNodeId": "0__op_0"}])
 
 
 def test_distinct_node_cycle_is_preserved_without_extra_rewritten_edges() -> None:
@@ -1448,20 +1572,21 @@ def test_distinct_node_cycle_is_preserved_without_extra_rewritten_edges() -> Non
     nodes = {node["id"]: node for node in graph["nodes"]}
     a_first, a_last = generated_ids["a"]
     b_first, b_last = generated_ids["b"]
-    assert nodes[a_first]["incomingEdges"] == [{"sourceNodeId": b_last}]
-    assert nodes[a_last]["incomingEdges"] == [{"sourceNodeId": a_first}]
-    assert nodes[b_first]["incomingEdges"] == [{"sourceNodeId": a_last}]
-    assert nodes[b_last]["incomingEdges"] == [{"sourceNodeId": b_first}]
-    assert sum(len(node.get("incomingEdges", [])) for node in nodes.values()) == 4
+    _ASSERT.assertEqual(nodes[a_first]["incomingEdges"], [{"sourceNodeId": b_last}])
+    _ASSERT.assertEqual(nodes[a_last]["incomingEdges"], [{"sourceNodeId": a_first}])
+    _ASSERT.assertEqual(nodes[b_first]["incomingEdges"], [{"sourceNodeId": a_last}])
+    _ASSERT.assertEqual(nodes[b_last]["incomingEdges"], [{"sourceNodeId": b_first}])
+    _ASSERT.assertEqual(
+        sum(len(node.get("incomingEdges", [])) for node in nodes.values()),
+        4,
+    )
 
 
 def test_sub_operator_ids_avoid_source_collisions_and_remain_bounded(
     tmp_path: Path, monkeypatch
 ) -> None:
     long_node_id = "canonical-" + ("x" * 500)
-    colliding_source_id = graphs_module._sub_operator_node_id(
-        "main", long_node_id, "A"
-    )
+    colliding_source_id = graphs_module._sub_operator_node_id("main", long_node_id, "A")
     source_operator_id = "source_operator/custom"
     monkeypatch.setattr(
         source_model_module,
@@ -1499,17 +1624,15 @@ def test_sub_operator_ids_avoid_source_collisions_and_remain_bounded(
     first_graph = _read_json(first.generated_models[0])["graphs"][0]
     second_graph = _read_json(second.generated_models[0])["graphs"][0]
     split_nodes = [
-        node
-        for node in first_graph["nodes"]
-        if node.get("namespace") in {"A", "B"}
+        node for node in first_graph["nodes"] if node.get("namespace") in {"A", "B"}
     ]
 
-    assert first_graph == second_graph
-    assert [node["namespace"] for node in split_nodes] == ["A", "B"]
-    assert all(len(node["id"]) <= 160 for node in split_nodes)
-    assert len({node["id"] for node in first_graph["nodes"]}) == 3
-    assert colliding_source_id in {node["id"] for node in first_graph["nodes"]}
-    assert split_nodes[0]["id"] != colliding_source_id
+    _ASSERT.assertEqual(first_graph, second_graph)
+    _ASSERT.assertEqual([node["namespace"] for node in split_nodes], ["A", "B"])
+    _ASSERT.assertTrue(all(len(node["id"]) <= 160 for node in split_nodes))
+    _ASSERT.assertEqual(len({node["id"] for node in first_graph["nodes"]}), 3)
+    _ASSERT.assertIn(colliding_source_id, {node["id"] for node in first_graph["nodes"]})
+    _ASSERT.assertNotEqual(split_nodes[0]["id"], colliding_source_id)
 
 
 def test_each_generated_hierarchy_splits_source_operator_independently(
@@ -1541,13 +1664,15 @@ def test_each_generated_hierarchy_splits_source_operator_independently(
         for collection in map(_read_json, generated.generated_models)
     }
 
-    assert set(collections) == {"left", "right"}
-    assert [
-        node["namespace"] for node in collections["left"]["graphs"][0]["nodes"]
-    ] == ["Left A", "Left B"]
-    assert [
-        node["namespace"] for node in collections["right"]["graphs"][0]["nodes"]
-    ] == ["Right A", "Right B"]
+    _ASSERT.assertEqual(set(collections), {"left", "right"})
+    _ASSERT.assertEqual(
+        [node["namespace"] for node in collections["left"]["graphs"][0]["nodes"]],
+        ["Left A", "Left B"],
+    )
+    _ASSERT.assertEqual(
+        [node["namespace"] for node in collections["right"]["graphs"][0]["nodes"]],
+        ["Right A", "Right B"],
+    )
 
 
 def test_one_source_operator_can_split_in_multiple_graphs_with_subgraph_links(
@@ -1597,12 +1722,14 @@ def test_one_source_operator_can_split_in_multiple_graphs_with_subgraph_links(
 
     collection = _read_json(generated.generated_models[0])
     graphs = {graph["id"]: graph for graph in collection["graphs"]}
-    assert set(graphs) == {"partition-main", "partition-nested"}
+    _ASSERT.assertEqual(set(graphs), {"partition-main", "partition-nested"})
     for graph in graphs.values():
-        assert [node["namespace"] for node in graph["nodes"]] == ["A", "B"]
-    assert all(
-        node["subgraphIds"] == ["partition-nested"]
-        for node in graphs["partition-main"]["nodes"]
+        _ASSERT.assertEqual([node["namespace"] for node in graph["nodes"]], ["A", "B"])
+    _ASSERT.assertTrue(
+        all(
+            node["subgraphIds"] == ["partition-nested"]
+            for node in graphs["partition-main"]["nodes"]
+        ),
     )
 
     mappings = _read_json(generated.entity_node_mappings)["results"][0]["mappings"]
@@ -1612,11 +1739,14 @@ def test_one_source_operator_can_split_in_multiple_graphs_with_subgraph_links(
         if mapping["entityId"] == source_operator_id
         and mapping["node"]["collectionLabel"] == "partition"
     }
-    assert len(generated_refs) == 4
-    assert {graph_id for graph_id, _ in generated_refs} == {
-        "partition-main",
-        "partition-nested",
-    }
+    _ASSERT.assertEqual(len(generated_refs), 4)
+    _ASSERT.assertEqual(
+        {graph_id for graph_id, _ in generated_refs},
+        {
+            "partition-main",
+            "partition-nested",
+        },
+    )
 
 
 def test_mixed_level_parents_generate_every_complete_runtime_path(
@@ -1689,36 +1819,45 @@ def test_mixed_level_parents_generate_every_complete_runtime_path(
 
     hierarchy = _read_json(generated.generated_models[0])
     reordered_hierarchy = _read_json(reordered.generated_models[0])
-    assert hierarchy == reordered_hierarchy
+    _ASSERT.assertEqual(hierarchy, reordered_hierarchy)
     hierarchy_graph = hierarchy["graphs"][0]
     sub_operators = [
         node
         for node in hierarchy_graph["nodes"]
         if "__mlia_sub_operator__" in node["id"]
     ]
-    assert [node["namespace"] for node in sub_operators] == [
-        "Deep Root/Mid",
-        "Direct Root",
-    ]
-    assert [node["label"] for node in sub_operators] == [
-        f"{source_label} (#1)",
-        f"{source_label} (#2)",
-    ]
-    source_graph = _read_json(
-        generated.root / "models" / "model-source.json"
-    )["graphs"][0]
-    assert source_graph["nodes"][0]["label"] == source_label
+    _ASSERT.assertEqual(
+        [node["namespace"] for node in sub_operators],
+        [
+            "Deep Root/Mid",
+            "Direct Root",
+        ],
+    )
+    _ASSERT.assertEqual(
+        [node["label"] for node in sub_operators],
+        [
+            f"{source_label} (#1)",
+            f"{source_label} (#2)",
+        ],
+    )
+    source_graph = _read_json(generated.root / "models" / "model-source.json")[
+        "graphs"
+    ][0]
+    _ASSERT.assertEqual(source_graph["nodes"][0]["label"], source_label)
     sub_operator_ids = {node["id"] for node in sub_operators}
 
     mappings = _read_json(generated.entity_node_mappings)
-    assert mappings == _read_json(reordered.entity_node_mappings)
+    _ASSERT.assertEqual(mappings, _read_json(reordered.entity_node_mappings))
     entity_mappings = mappings["results"][0]["mappings"]
-    assert {
-        mapping["node"]["nodeId"]
-        for mapping in entity_mappings
-        if mapping["entityId"] == source_operator_id
-        and mapping["node"]["collectionLabel"] == "root_mid"
-    } == sub_operator_ids
+    _ASSERT.assertEqual(
+        {
+            mapping["node"]["nodeId"]
+            for mapping in entity_mappings
+            if mapping["entityId"] == source_operator_id
+            and mapping["node"]["collectionLabel"] == "root_mid"
+        },
+        sub_operator_ids,
+    )
     group_ids_by_entity = {
         entity_id: {
             mapping["node"]["nodeId"]
@@ -1728,36 +1867,45 @@ def test_mixed_level_parents_generate_every_complete_runtime_path(
         }
         for entity_id in ("root-direct", "root-deep", "mid", "root-inferred")
     }
-    assert group_ids_by_entity == {
-        "root-direct": {"Direct Root___group___"},
-        "root-deep": {"Deep Root___group___"},
-        "mid": {"Deep Root/Mid___group___"},
-        "root-inferred": set(),
-    }
+    _ASSERT.assertEqual(
+        group_ids_by_entity,
+        {
+            "root-direct": {"Direct Root___group___"},
+            "root-deep": {"Deep Root___group___"},
+            "mid": {"Deep Root/Mid___group___"},
+            "root-inferred": set(),
+        },
+    )
 
     navigation = _mapping_by_source(generated)
-    assert _read_json(generated.sync_navigation) == _read_json(
-        reordered.sync_navigation
+    _ASSERT.assertEqual(
+        _read_json(generated.sync_navigation),
+        _read_json(reordered.sync_navigation),
     )
-    assert navigation[("Source Model", "main", "source___group___")]["root_mid"][
-        "root_mid-main"
-    ] == ["Deep Root/Mid___group___", "Direct Root___group___"]
-    assert navigation[("Source Model", "main", "0__op_0")]["root_mid"][
-        "root_mid-main"
-    ] == [node["id"] for node in sub_operators]
+    _ASSERT.assertEqual(
+        navigation[("Source Model", "main", "source___group___")]["root_mid"][
+            "root_mid-main"
+        ],
+        ["Deep Root/Mid___group___", "Direct Root___group___"],
+    )
+    _ASSERT.assertEqual(
+        navigation[("Source Model", "main", "0__op_0")]["root_mid"]["root_mid-main"],
+        [node["id"] for node in sub_operators],
+    )
     for sub_operator in sub_operators:
-        assert navigation[
-            ("root_mid", "root_mid-main", sub_operator["id"])
-        ]["Source Model"]["main"] == ["0__op_0"]
+        _ASSERT.assertEqual(
+            navigation[("root_mid", "root_mid-main", sub_operator["id"])][
+                "Source Model"
+            ]["main"],
+            ["0__op_0"],
+        )
 
     node_data_dir = generated.root / "node-data" / "model-hierarchy-root_mid"
-    reordered_node_data_dir = (
-        reordered.root / "node-data" / "model-hierarchy-root_mid"
-    )
+    reordered_node_data_dir = reordered.root / "node-data" / "model-hierarchy-root_mid"
     for filename in ("placement.json", "status.json", "checks.json", "advice.json"):
         overlay = _read_json(node_data_dir / filename)
-        assert overlay == _read_json(reordered_node_data_dir / filename)
-        assert set(overlay["root_mid-main"]["results"]) == sub_operator_ids
+        _ASSERT.assertEqual(overlay, _read_json(reordered_node_data_dir / filename))
+        _ASSERT.assertEqual(set(overlay["root_mid-main"]["results"]), sub_operator_ids)
 
 
 def test_multi_parent_source_operator_becomes_deterministic_sub_operator_chain(
@@ -1804,15 +1952,11 @@ def test_multi_parent_source_operator_becomes_deterministic_sub_operator_chain(
     result["breakdowns"] = [
         {
             "entity_id": "source_operator/segment_0/spirv-1",
-            "metrics": [
-                {"name": "cycles", "value": 7, "aggregation": "sum"}
-            ],
+            "metrics": [{"name": "cycles", "value": 7, "aggregation": "sum"}],
         },
         {
             "entity_id": "chain-shared",
-            "metrics": [
-                {"name": "cycles", "value": 11, "aggregation": "sum"}
-            ],
+            "metrics": [{"name": "cycles", "value": 11, "aggregation": "sum"}],
         },
     ]
     result["checks"] = [
@@ -1888,60 +2032,69 @@ def test_multi_parent_source_operator_becomes_deterministic_sub_operator_chain(
 
     hierarchy_graph = _read_json(generated.generated_models[0])["graphs"][0]
     nodes = hierarchy_graph["nodes"]
-    sub_operators = [
-        node for node in nodes if "__mlia_sub_operator__" in node["id"]
-    ]
+    sub_operators = [node for node in nodes if "__mlia_sub_operator__" in node["id"]]
     expected_paths = [
         "Cascade A/Chain A",
         "Cascade B/Shared",
         "Cascade C/Shared",
         "Cascade Z/Chain Z",
     ]
-    assert [node["namespace"] for node in sub_operators] == expected_paths
-    assert len({node["id"] for node in sub_operators}) == len(expected_paths)
-    assert all(
-        node["id"].startswith("0__op_1__mlia_sub_operator__")
-        for node in sub_operators
+    _ASSERT.assertEqual([node["namespace"] for node in sub_operators], expected_paths)
+    _ASSERT.assertEqual(
+        len({node["id"] for node in sub_operators}), len(expected_paths)
     )
-    assert not any(node["id"] == "0__op_1" for node in nodes)
-    assert sub_operators[0]["incomingEdges"] == [
-        {
-            "sourceNodeId": "input",
-            "sourceNodeOutputId": "0",
-            "targetNodeInputId": "0",
-        }
-    ]
-    for previous, current in zip(sub_operators, sub_operators[1:]):
-        assert current["incomingEdges"] == [
+    _ASSERT.assertTrue(
+        all(
+            node["id"].startswith("0__op_1__mlia_sub_operator__")
+            for node in sub_operators
+        ),
+    )
+    _ASSERT.assertFalse(any(node["id"] == "0__op_1" for node in nodes))
+    _ASSERT.assertEqual(
+        sub_operators[0]["incomingEdges"],
+        [
             {
-                "sourceNodeId": previous["id"],
+                "sourceNodeId": "input",
                 "sourceNodeOutputId": "0",
                 "targetNodeInputId": "0",
-            },
-            {
-                "sourceNodeId": previous["id"],
-                "sourceNodeOutputId": "1",
-                "targetNodeInputId": "1",
-            },
-        ]
+            }
+        ],
+    )
+    for previous, current in zip(sub_operators, sub_operators[1:]):
+        _ASSERT.assertEqual(
+            current["incomingEdges"],
+            [
+                {
+                    "sourceNodeId": previous["id"],
+                    "sourceNodeOutputId": "0",
+                    "targetNodeInputId": "0",
+                },
+                {
+                    "sourceNodeId": previous["id"],
+                    "sourceNodeOutputId": "1",
+                    "targetNodeInputId": "1",
+                },
+            ],
+        )
     last_sub_operator_id = sub_operators[-1]["id"]
     consumers = {
-        node["id"]: node
-        for node in nodes
-        if node["id"].startswith("consumer-")
+        node["id"]: node for node in nodes if node["id"].startswith("consumer-")
     }
-    assert (
-        consumers["consumer-0"]["incomingEdges"][0]["sourceNodeId"]
-        == last_sub_operator_id
+    _ASSERT.assertEqual(
+        consumers["consumer-0"]["incomingEdges"][0]["sourceNodeId"],
+        last_sub_operator_id,
     )
-    assert (
-        consumers["consumer-1"]["incomingEdges"][0]["sourceNodeId"]
-        == last_sub_operator_id
+    _ASSERT.assertEqual(
+        consumers["consumer-1"]["incomingEdges"][0]["sourceNodeId"],
+        last_sub_operator_id,
     )
-    assert sum(len(node.get("incomingEdges", [])) for node in consumers.values()) == 2
+    _ASSERT.assertEqual(
+        sum(len(node.get("incomingEdges", [])) for node in consumers.values()),
+        2,
+    )
 
     reordered_graph = _read_json(reordered.generated_models[0])
-    assert reordered_graph == _read_json(generated.generated_models[0])
+    _ASSERT.assertEqual(reordered_graph, _read_json(generated.generated_models[0]))
 
     entity_mappings = _read_json(generated.entity_node_mappings)["results"][0][
         "mappings"
@@ -1953,52 +2106,64 @@ def test_multi_parent_source_operator_becomes_deterministic_sub_operator_chain(
         if mapping["node"]["collectionLabel"] == "cascade_chain"
         and mapping["entityId"] == source_operator_id
     }
-    assert mapped_sub_operator_ids == {node["id"] for node in sub_operators}
+    _ASSERT.assertEqual(mapped_sub_operator_ids, {node["id"] for node in sub_operators})
     shared_group_ids = {
         mapping["node"]["nodeId"]
         for mapping in entity_mappings
         if mapping["entityId"] == "chain-shared"
     }
-    assert shared_group_ids == {
-        "Cascade B/Shared___group___",
-        "Cascade C/Shared___group___",
-    }
+    _ASSERT.assertEqual(
+        shared_group_ids,
+        {
+            "Cascade B/Shared___group___",
+            "Cascade C/Shared___group___",
+        },
+    )
 
     node_data_dir = generated.root / "node-data" / "model-hierarchy-cascade_chain"
     for filename in ("placement.json", "status.json", "checks.json", "advice.json"):
         overlay_results = _read_json(node_data_dir / filename)["cascade_chain-main"][
             "results"
         ]
-        assert set(overlay_results) == {node["id"] for node in sub_operators}
-    generated_cycles = _read_json(node_data_dir / "cycles.json")[
-        "cascade_chain-main"
-    ]["results"]
-    assert generated_cycles == {
-        "Cascade B/Shared": {"value": 11},
-        "Cascade C/Shared": {"value": 11},
-    }
-    assert not mapped_sub_operator_ids.intersection(generated_cycles)
+        _ASSERT.assertEqual(
+            set(overlay_results), {node["id"] for node in sub_operators}
+        )
+    generated_cycles = _read_json(node_data_dir / "cycles.json")["cascade_chain-main"][
+        "results"
+    ]
+    _ASSERT.assertEqual(
+        generated_cycles,
+        {
+            "Cascade B/Shared": {"value": 11},
+            "Cascade C/Shared": {"value": 11},
+        },
+    )
+    _ASSERT.assertFalse(mapped_sub_operator_ids.intersection(generated_cycles))
     source_cycles = _read_json(
         generated.root / "node-data" / "model-source" / "cycles.json"
     )["main"]["results"]
-    assert source_cycles["0__op_1"] == {"value": 7}
-    assert not mapped_sub_operator_ids.intersection(source_cycles)
+    _ASSERT.assertEqual(source_cycles["0__op_1"], {"value": 7})
+    _ASSERT.assertFalse(mapped_sub_operator_ids.intersection(source_cycles))
 
     navigation = _mapping_by_source(generated)
-    source_to_generated = navigation[
-        ("Source Model", "main", "source/op___group___")
-    ]["cascade_chain"]["cascade_chain-main"]
-    assert source_to_generated == [
-        f"{path}___group___" for path in expected_paths
-    ]
-    source_leaf_targets = navigation[
-        ("Source Model", "main", "0__op_1")
-    ]["cascade_chain"]["cascade_chain-main"]
-    assert source_leaf_targets == [node["id"] for node in sub_operators]
+    source_to_generated = navigation[("Source Model", "main", "source/op___group___")][
+        "cascade_chain"
+    ]["cascade_chain-main"]
+    _ASSERT.assertEqual(
+        source_to_generated,
+        [f"{path}___group___" for path in expected_paths],
+    )
+    source_leaf_targets = navigation[("Source Model", "main", "0__op_1")][
+        "cascade_chain"
+    ]["cascade_chain-main"]
+    _ASSERT.assertEqual(source_leaf_targets, [node["id"] for node in sub_operators])
     for sub_operator in sub_operators:
-        assert navigation[
-            ("cascade_chain", "cascade_chain-main", sub_operator["id"])
-        ]["Source Model"]["main"] == ["0__op_1"]
+        _ASSERT.assertEqual(
+            navigation[("cascade_chain", "cascade_chain-main", sub_operator["id"])][
+                "Source Model"
+            ]["main"],
+            ["0__op_1"],
+        )
 
 
 def test_split_nodes_preserve_unusable_source_label_behavior() -> None:
@@ -2022,9 +2187,9 @@ def test_split_nodes_preserve_unusable_source_label_behavior() -> None:
     )
     nodes = generated["nodes"]
 
-    assert all("label" not in node for node in nodes[:2])
-    assert [node["label"] for node in nodes[2:4]] == ["", ""]
-    assert [node["label"] for node in nodes[4:]] == [7, 7]
+    _ASSERT.assertTrue(all("label" not in node for node in nodes[:2]))
+    _ASSERT.assertEqual([node["label"] for node in nodes[2:4]], ["", ""])
+    _ASSERT.assertEqual([node["label"] for node in nodes[4:]], [7, 7])
 
 
 def test_single_complete_path_keeps_original_node_and_dataflow(
@@ -2074,16 +2239,20 @@ def test_single_complete_path_keeps_original_node_and_dataflow(
     nodes = _read_json(generated.generated_models[0])["graphs"][0]["nodes"]
     generated_by_id = {node["id"]: node for node in nodes}
 
-    assert "0__op_1" in generated_by_id
-    assert not any("__mlia_sub_operator__" in node_id for node_id in generated_by_id)
-    assert generated_by_id["0__op_1"]["namespace"] == "Cascade/Chain"
-    assert generated_by_id["0__op_1"]["label"] == "0__op_1"
-    assert generated_by_id["0__op_1"]["incomingEdges"] == [
-        {"sourceNodeId": "input"}
-    ]
-    assert generated_by_id["consumer"]["incomingEdges"] == [
-        {"sourceNodeId": "0__op_1"}
-    ]
+    _ASSERT.assertIn("0__op_1", generated_by_id)
+    _ASSERT.assertFalse(
+        any("__mlia_sub_operator__" in node_id for node_id in generated_by_id),
+    )
+    _ASSERT.assertEqual(generated_by_id["0__op_1"]["namespace"], "Cascade/Chain")
+    _ASSERT.assertEqual(generated_by_id["0__op_1"]["label"], "0__op_1")
+    _ASSERT.assertEqual(
+        generated_by_id["0__op_1"]["incomingEdges"],
+        [{"sourceNodeId": "input"}],
+    )
+    _ASSERT.assertEqual(
+        generated_by_id["consumer"]["incomingEdges"],
+        [{"sourceNodeId": "0__op_1"}],
+    )
 
 
 def _headless_browser() -> str | None:
@@ -2172,12 +2341,12 @@ document.documentElement.dataset.rightGraphShownDisplay =
 
     completed = _run_headless_browser(browser, index)
 
-    assert completed.returncode == 0, completed.stderr
-    assert 'data-right-graph-hidden="true"' in completed.stdout
-    assert 'data-right-graph-display="none"' in completed.stdout
-    assert 'data-add-pane-hidden="false"' in completed.stdout
-    assert 'data-add-pane-display="flex"' in completed.stdout
-    assert 'data-right-graph-shown-display="flex"' in completed.stdout
+    _ASSERT.assertEqual(completed.returncode, 0, completed.stderr)
+    _ASSERT.assertIn('data-right-graph-hidden="true"', completed.stdout)
+    _ASSERT.assertIn('data-right-graph-display="none"', completed.stdout)
+    _ASSERT.assertIn('data-add-pane-hidden="false"', completed.stdout)
+    _ASSERT.assertIn('data-add-pane-display="flex"', completed.stdout)
+    _ASSERT.assertIn('data-right-graph-shown-display="flex"', completed.stdout)
 
 
 def test_vendored_visualizer_executes_graph_mapping_validation(tmp_path: Path) -> None:
@@ -2255,8 +2424,8 @@ const graphMappingsProbe = setInterval(() => {
 
     completed = _run_headless_browser(browser, index)
 
-    assert completed.returncode == 0, completed.stderr
-    assert 'data-graph-mappings-runtime="validated"' in completed.stdout
+    _ASSERT.assertEqual(completed.returncode, 0, completed.stderr)
+    _ASSERT.assertIn('data-graph-mappings-runtime="validated"', completed.stdout)
 
 
 def test_vendored_visualizer_applies_mappings_and_suppresses_cross_family_fallback(
@@ -2285,11 +2454,12 @@ def test_vendored_visualizer_applies_mappings_and_suppresses_cross_family_fallba
     source_route = _mapping_by_source(generated)[
         ("Source Model", "main", "shared___group___")
     ]
-    assert source_route["partition"]["partition-main"] == [
-        "mapped___group___"
-    ]
-    assert source_route["Source Model"]["unrelated"] == []
-    assert source_route["partition"]["partition-unrelated"] == []
+    _ASSERT.assertEqual(
+        source_route["partition"]["partition-main"],
+        ["mapped___group___"],
+    )
+    _ASSERT.assertEqual(source_route["Source Model"]["unrelated"], [])
+    _ASSERT.assertEqual(source_route["partition"]["partition-unrelated"], [])
 
     index = build_artifacts_bundle(generated.root)
     runtime_probe = """
@@ -2439,10 +2609,10 @@ def test_vendored_visualizer_applies_mappings_and_suppresses_cross_family_fallba
 
     completed = _run_headless_browser(browser, index, budget_ms=30000)
 
-    assert completed.returncode == 0, completed.stderr
-    assert 'data-graph-mappings-mapped="selected"' in completed.stdout
-    assert 'data-graph-mappings-empty-route="suppressed"' in completed.stdout
-    assert "data-graph-mappings-error=" not in completed.stdout
+    _ASSERT.assertEqual(completed.returncode, 0, completed.stderr)
+    _ASSERT.assertIn('data-graph-mappings-mapped="selected"', completed.stdout)
+    _ASSERT.assertIn('data-graph-mappings-empty-route="suppressed"', completed.stdout)
+    _ASSERT.assertNotIn("data-graph-mappings-error=", completed.stdout)
 
 
 def test_vendored_visualizer_keeps_cross_parent_collision_groups_distinct(
@@ -2571,9 +2741,9 @@ def test_vendored_visualizer_keeps_cross_parent_collision_groups_distinct(
 
     completed = _run_headless_browser(browser, index, budget_ms=30000)
 
-    assert completed.returncode == 0, completed.stderr
-    assert 'data-hierarchy-collision-runtime="distinct"' in completed.stdout
-    assert "data-hierarchy-collision-error=" not in completed.stdout
+    _ASSERT.assertEqual(completed.returncode, 0, completed.stderr)
+    _ASSERT.assertIn('data-hierarchy-collision-runtime="distinct"', completed.stdout)
+    _ASSERT.assertNotIn("data-hierarchy-collision-error=", completed.stdout)
 
 
 def test_vendored_visualizer_keeps_group_suffix_leaf_addressable(
@@ -2721,7 +2891,7 @@ def test_vendored_visualizer_keeps_group_suffix_leaf_addressable(
 
     completed = _run_headless_browser(browser, index, budget_ms=30000)
 
-    assert completed.returncode == 0, completed.stderr
-    assert 'data-group-suffix-leaf-runtime="processed"' in completed.stdout
-    assert 'data-group-suffix-leaf-selection="synced"' in completed.stdout
-    assert "data-group-suffix-leaf-error=" not in completed.stdout
+    _ASSERT.assertEqual(completed.returncode, 0, completed.stderr)
+    _ASSERT.assertIn('data-group-suffix-leaf-runtime="processed"', completed.stdout)
+    _ASSERT.assertIn('data-group-suffix-leaf-selection="synced"', completed.stdout)
+    _ASSERT.assertNotIn("data-group-suffix-leaf-error=", completed.stdout)

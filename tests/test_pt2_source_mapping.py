@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -11,6 +12,8 @@ from typing import Any
 import pytest
 
 from mlia.model_explorer._artifacts import source_mapping, source_model
+
+_ASSERT = unittest.TestCase()
 
 
 def _source_node(name: str, op: str) -> SimpleNamespace:
@@ -52,7 +55,7 @@ def _mapping(
     mapping = source_mapping._source_operator_node_ids(
         Path("model.pt2"), graph_collection
     )
-    assert loads == [Path("model.pt2")]
+    _ASSERT.assertEqual(loads, [Path("model.pt2")])
     return mapping
 
 
@@ -78,11 +81,14 @@ def test_maps_top_level_operations_by_exact_fx_node_name(
         _graph_collection(*(node.name for node in nodes)),
     )
 
-    assert mapping == {
-        "source_operator/conv2d": [_ref("conv2d")],
-        "source_operator/activation": [_ref("activation")],
-        "source_operator/reshape": [_ref("reshape")],
-    }
+    _ASSERT.assertEqual(
+        mapping,
+        {
+            "source_operator/conv2d": [_ref("conv2d")],
+            "source_operator/activation": [_ref("activation")],
+            "source_operator/reshape": [_ref("reshape")],
+        },
+    )
 
 
 def test_rejects_adapter_nodes_that_do_not_match_exported_graph(
@@ -100,9 +106,7 @@ def test_rejects_duplicate_adapter_node_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     graph_collection = _graph_collection("relu")
-    graph_collection["graphs"][0]["nodes"].append(
-        {"id": "relu", "label": "duplicate"}
-    )
+    graph_collection["graphs"][0]["nodes"].append({"id": "relu", "label": "duplicate"})
 
     with pytest.raises(RuntimeError, match="duplicate node ID 'relu'"):
         _mapping(
@@ -139,13 +143,17 @@ def test_real_builtin_adapter_maps_saved_exported_program(tmp_path: Path) -> Non
         if node.op in source_mapping._PT2_OPERATION_NODE_OPS
     }
 
-    assert len(generated.paths) == 1
-    assert generated.graph_collection is not None
-    assert set(generated.source_operator_to_node_ids) == {
-        f"source_operator/{node_name}" for node_name in operation_names
-    }
-    assert {
-        node_ref.node_id
-        for node_refs in generated.source_operator_to_node_ids.values()
-        for node_ref in node_refs
-    } == operation_names
+    _ASSERT.assertEqual(len(generated.paths), 1)
+    _ASSERT.assertIsNot(generated.graph_collection, None)
+    _ASSERT.assertEqual(
+        set(generated.source_operator_to_node_ids),
+        {f"source_operator/{node_name}" for node_name in operation_names},
+    )
+    _ASSERT.assertEqual(
+        {
+            node_ref.node_id
+            for node_refs in generated.source_operator_to_node_ids.values()
+            for node_ref in node_refs
+        },
+        operation_names,
+    )

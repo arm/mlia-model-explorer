@@ -5,12 +5,15 @@
 from __future__ import annotations
 
 import json
+import unittest
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from mlia.model_explorer import bundler
+
+_ASSERT = unittest.TestCase()
 
 
 def _graph_collection(
@@ -71,18 +74,21 @@ def test_node_data_provider_runs_read_graph_indexed_payload(tmp_path: Path) -> N
         ],
     )
 
-    assert runs == [
-        {
-            "collectionLabel": "Source Model",
-            "name": "cycles",
-            "data": {
-                "main": {
-                    "name": "cycles",
-                    "results": {"node": {"value": 12}},
-                }
-            },
-        }
-    ]
+    _ASSERT.assertEqual(
+        runs,
+        [
+            {
+                "collectionLabel": "Source Model",
+                "name": "cycles",
+                "data": {
+                    "main": {
+                        "name": "cycles",
+                        "results": {"node": {"value": 12}},
+                    }
+                },
+            }
+        ],
+    )
 
 
 def test_node_data_provider_runs_reject_unindexed_payload(tmp_path: Path) -> None:
@@ -134,7 +140,7 @@ def test_node_data_provider_runs_allow_same_effective_name_on_disjoint_graphs(
         ],
     )
 
-    assert [run["name"] for run in runs] == ["duplicate", "duplicate"]
+    _ASSERT.assertEqual([run["name"] for run in runs], ["duplicate", "duplicate"])
 
 
 def test_node_data_provider_runs_reject_same_graph_effective_name(
@@ -186,9 +192,10 @@ def test_selected_node_data_uses_graph_level_effective_name() -> None:
         )
     ]
 
-    assert bundler._selected_node_data(runs) == [
-        {"modelName": "collection", "name": "total_cycles"}
-    ]
+    _ASSERT.assertEqual(
+        bundler._selected_node_data(runs),
+        [{"modelName": "collection", "name": "total_cycles"}],
+    )
 
 
 def test_initial_ui_state_prefers_greater_valid_node_data_coverage() -> None:
@@ -254,22 +261,30 @@ def test_initial_ui_state_prefers_greater_valid_node_data_coverage() -> None:
         ),
     ]
 
-    assert bundler._node_data_provider_run_coverage(more_runs, runs) == 1
-    assert bundler._node_data_provider_run_coverage(more_coverage, runs) == 3
-    assert bundler._node_data_provider_run_coverage(lower_coverage, runs) == 1
+    _ASSERT.assertEqual(bundler._node_data_provider_run_coverage(more_runs, runs), 1)
+    _ASSERT.assertEqual(
+        bundler._node_data_provider_run_coverage(more_coverage, runs), 3
+    )
+    _ASSERT.assertEqual(
+        bundler._node_data_provider_run_coverage(lower_coverage, runs), 1
+    )
 
     initial_ui_state = bundler._initial_ui_state(
         [source, more_runs, more_coverage, lower_coverage],
         runs,
     )
 
-    assert initial_ui_state is not None
-    assert "selected" not in initial_ui_state["paneStates"][0]
-    assert initial_ui_state["paneStates"][0]["selectedGraphId"] == "source"
-    assert initial_ui_state["paneStates"][1]["selected"] is True
-    assert initial_ui_state["paneStates"][1]["selectedGraphId"] == "coverage-graph"
-    assert (
-        initial_ui_state["paneStates"][1]["selectedCollectionLabel"] == "more-coverage"
+    _ASSERT.assertIsNot(initial_ui_state, None)
+    _ASSERT.assertNotIn("selected", initial_ui_state["paneStates"][0])
+    _ASSERT.assertEqual(initial_ui_state["paneStates"][0]["selectedGraphId"], "source")
+    _ASSERT.assertIs(initial_ui_state["paneStates"][1]["selected"], True)
+    _ASSERT.assertEqual(
+        initial_ui_state["paneStates"][1]["selectedGraphId"],
+        "coverage-graph",
+    )
+    _ASSERT.assertEqual(
+        initial_ui_state["paneStates"][1]["selectedCollectionLabel"],
+        "more-coverage",
     )
 
 
@@ -293,9 +308,14 @@ def test_initial_ui_state_preserves_first_candidate_on_coverage_tie() -> None:
 
     initial_ui_state = bundler._initial_ui_state([source, first, second], runs)
 
-    assert initial_ui_state is not None
-    assert initial_ui_state["paneStates"][1]["selectedGraphId"] == "first-graph"
-    assert initial_ui_state["paneStates"][1]["selectedCollectionLabel"] == "first"
+    _ASSERT.assertIsNot(initial_ui_state, None)
+    _ASSERT.assertEqual(
+        initial_ui_state["paneStates"][1]["selectedGraphId"], "first-graph"
+    )
+    _ASSERT.assertEqual(
+        initial_ui_state["paneStates"][1]["selectedCollectionLabel"],
+        "first",
+    )
 
 
 def test_node_data_provider_run_coverage_is_collection_scoped() -> None:
@@ -317,7 +337,7 @@ def test_node_data_provider_run_coverage_is_collection_scoped() -> None:
         )
     ]
 
-    assert bundler._node_data_provider_run_coverage(collection, runs) == 0
+    _ASSERT.assertEqual(bundler._node_data_provider_run_coverage(collection, runs), 0)
 
 
 def test_initial_ui_state_ignores_later_graph_coverage() -> None:
@@ -369,19 +389,22 @@ def test_initial_ui_state_ignores_later_graph_coverage() -> None:
         ),
     ]
 
-    assert bundler._node_data_provider_run_coverage(later_heavy, runs) == 1
-    assert bundler._node_data_provider_run_coverage(first_graph_rich, runs) == 2
+    _ASSERT.assertEqual(bundler._node_data_provider_run_coverage(later_heavy, runs), 1)
+    _ASSERT.assertEqual(
+        bundler._node_data_provider_run_coverage(first_graph_rich, runs), 2
+    )
 
     initial_ui_state = bundler._initial_ui_state(
         [source, later_heavy, first_graph_rich], runs
     )
 
-    assert initial_ui_state is not None
-    assert initial_ui_state["paneStates"][0]["selectedGraphId"] == "source"
-    assert (
-        initial_ui_state["paneStates"][1]["selectedGraphId"] == "first-graph-rich-first"
+    _ASSERT.assertIsNot(initial_ui_state, None)
+    _ASSERT.assertEqual(initial_ui_state["paneStates"][0]["selectedGraphId"], "source")
+    _ASSERT.assertEqual(
+        initial_ui_state["paneStates"][1]["selectedGraphId"],
+        "first-graph-rich-first",
     )
-    assert (
-        initial_ui_state["paneStates"][1]["selectedCollectionLabel"]
-        == "first-graph-rich"
+    _ASSERT.assertEqual(
+        initial_ui_state["paneStates"][1]["selectedCollectionLabel"],
+        "first-graph-rich",
     )

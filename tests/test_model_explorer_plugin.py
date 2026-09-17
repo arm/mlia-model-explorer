@@ -8,6 +8,7 @@ import hashlib
 import json
 import shutil
 import subprocess
+import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -29,6 +30,8 @@ from mlia.model_explorer.artifacts import write_artifacts
 from mlia.model_explorer.bundler import build_artifacts_bundle, open_artifacts_bundle
 from mlia.model_explorer.graph_data import model_explorer_normalized_namespace
 from mlia.model_explorer.plugin import ModelExplorerAnalysisPlugin
+
+_ASSERT = unittest.TestCase()
 
 _DEFAULT_OUTPUT = object()
 
@@ -589,12 +592,12 @@ def test_plugin_registers_with_registry() -> None:
 
     ModelExplorerAnalysisPlugin.register(registry)
 
-    assert len(registry.plugins) == 1
+    _ASSERT.assertEqual(len(registry.plugins), 1)
     options = registry.cli_options()
-    assert len(options) == 1
-    assert isinstance(options[0], click.Option)
-    assert options[0].opts == ["--model-explorer"]
-    assert registry.enabled_plugins({"model_explorer": "files"})
+    _ASSERT.assertEqual(len(options), 1)
+    _ASSERT.assertIsInstance(options[0], click.Option)
+    _ASSERT.assertEqual(options[0].opts, ["--model-explorer"])
+    _ASSERT.assertTrue(registry.enabled_plugins({"model_explorer": "files"}))
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
@@ -607,7 +610,7 @@ def test_json_artifact_writer_rejects_non_finite_numbers(
     with pytest.raises(ValueError, match="Out of range float values"):
         serialization_module._write_json(output_path, {"value": value})
 
-    assert not output_path.exists()
+    _ASSERT.assertFalse(output_path.exists())
 
 
 def test_write_artifacts(tmp_path: Path, monkeypatch) -> None:
@@ -620,111 +623,128 @@ def test_write_artifacts(tmp_path: Path, monkeypatch) -> None:
     )
     artifacts = write_artifacts(_run_result(tmp_path, model_name="model.tflite"))
 
-    assert artifacts.manifest.exists()
-    assert artifacts.standardized_output.exists()
-    assert artifacts.sync_navigation.exists()
-    assert artifacts.entity_node_mappings.exists()
-    assert all(path.exists() for path in artifacts.node_data)
-    assert not (artifacts.root / "models" / "model.tflite").exists()
+    _ASSERT.assertTrue(artifacts.manifest.exists())
+    _ASSERT.assertTrue(artifacts.standardized_output.exists())
+    _ASSERT.assertTrue(artifacts.sync_navigation.exists())
+    _ASSERT.assertTrue(artifacts.entity_node_mappings.exists())
+    _ASSERT.assertTrue(all(path.exists() for path in artifacts.node_data))
+    _ASSERT.assertFalse((artifacts.root / "models" / "model.tflite").exists())
 
     manifest = _read_json(artifacts.manifest)
-    assert manifest["command"] == "check"
-    assert manifest["model"]["name"] == "model.tflite"
-    assert manifest["model_path"] == "models/model-source.json"
-    assert manifest["standardized_output"] == "standardized-output.json"
-    assert manifest["sync_navigation"] == "sync-navigation.json"
-    assert manifest["entity_node_mappings"] == "entity-node-mappings.json"
+    _ASSERT.assertEqual(manifest["command"], "check")
+    _ASSERT.assertEqual(manifest["model"]["name"], "model.tflite")
+    _ASSERT.assertEqual(manifest["model_path"], "models/model-source.json")
+    _ASSERT.assertEqual(manifest["standardized_output"], "standardized-output.json")
+    _ASSERT.assertEqual(manifest["sync_navigation"], "sync-navigation.json")
+    _ASSERT.assertEqual(manifest["entity_node_mappings"], "entity-node-mappings.json")
     node = {"collectionLabel": "Source Model", "graphId": "main", "nodeId": "0"}
-    assert _read_json(artifacts.entity_node_mappings) == {
-        "results": [
+    _ASSERT.assertEqual(
+        _read_json(artifacts.entity_node_mappings),
+        {
+            "results": [
+                {
+                    "resultIndex": 0,
+                    "resultKind": "compatibility",
+                    "mappings": [
+                        {
+                            "node": node,
+                            "entityId": "source_operator/operator/0",
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    _ASSERT.assertEqual(
+        _read_json(artifacts.sync_navigation),
+        {
+            "type": "sync_navigation",
+            "graphMappings": [],
+        },
+    )
+    _ASSERT.assertEqual(
+        manifest["node_data"],
+        [
             {
-                "resultIndex": 0,
-                "resultKind": "compatibility",
-                "mappings": [
-                    {
-                        "node": node,
-                        "entityId": "source_operator/operator/0",
-                    }
-                ],
-            }
-        ]
-    }
-    assert _read_json(artifacts.sync_navigation) == {
-        "type": "sync_navigation",
-        "graphMappings": [],
-    }
-    assert manifest["node_data"] == [
-        {
-            "path": "node-data/model-source/placement.json",
-            "graph_collection_label": "Source Model",
-        },
-        {
-            "path": "node-data/model-source/checks.json",
-            "graph_collection_label": "Source Model",
-        },
-        {
-            "path": "node-data/model-source/advice.json",
-            "graph_collection_label": "Source Model",
-        },
-    ]
-    assert manifest["nodeDataOverlayKeysAndDisplayNames"] == [
-        {
-            "overlayKey": {
-                "resultIndex": 0,
-                "resultKind": "compatibility",
-                "category": "placement",
-                "name": "placement",
-                "unit": "",
-                "breakdownQualifiers": {},
-                "metricQualifiers": {},
+                "path": "node-data/model-source/placement.json",
+                "graph_collection_label": "Source Model",
             },
-            "displayName": "placement",
-        },
-        {
-            "overlayKey": {
-                "resultIndex": 0,
-                "resultKind": "compatibility",
-                "category": "checks",
-                "name": "checks",
-                "unit": "",
-                "breakdownQualifiers": {},
-                "metricQualifiers": {},
+            {
+                "path": "node-data/model-source/checks.json",
+                "graph_collection_label": "Source Model",
             },
-            "displayName": "checks",
-        },
-        {
-            "overlayKey": {
-                "resultIndex": 0,
-                "resultKind": "compatibility",
-                "category": "advice",
-                "name": "advice",
-                "unit": "",
-                "breakdownQualifiers": {},
-                "metricQualifiers": {},
+            {
+                "path": "node-data/model-source/advice.json",
+                "graph_collection_label": "Source Model",
             },
-            "displayName": "advice",
-        },
-    ]
-    assert "mappings" not in manifest
-    assert not (artifacts.root / "mapping").exists()
+        ],
+    )
+    _ASSERT.assertEqual(
+        manifest["nodeDataOverlayKeysAndDisplayNames"],
+        [
+            {
+                "overlayKey": {
+                    "resultIndex": 0,
+                    "resultKind": "compatibility",
+                    "category": "placement",
+                    "name": "placement",
+                    "unit": "",
+                    "breakdownQualifiers": {},
+                    "metricQualifiers": {},
+                },
+                "displayName": "placement",
+            },
+            {
+                "overlayKey": {
+                    "resultIndex": 0,
+                    "resultKind": "compatibility",
+                    "category": "checks",
+                    "name": "checks",
+                    "unit": "",
+                    "breakdownQualifiers": {},
+                    "metricQualifiers": {},
+                },
+                "displayName": "checks",
+            },
+            {
+                "overlayKey": {
+                    "resultIndex": 0,
+                    "resultKind": "compatibility",
+                    "category": "advice",
+                    "name": "advice",
+                    "unit": "",
+                    "breakdownQualifiers": {},
+                    "metricQualifiers": {},
+                },
+                "displayName": "advice",
+            },
+        ],
+    )
+    _ASSERT.assertNotIn("mappings", manifest)
+    _ASSERT.assertFalse((artifacts.root / "mapping").exists())
 
     placement = _read_json(
         artifacts.root / "node-data" / "model-source" / "placement.json"
     )
-    assert placement["main"]["name"] == "placement"
-    assert placement["main"]["results"] == {"0": {"value": "NPU", "bgColor": "#2e7d32"}}
+    _ASSERT.assertEqual(placement["main"]["name"], "placement")
+    _ASSERT.assertEqual(
+        placement["main"]["results"],
+        {"0": {"value": "NPU", "bgColor": "#2e7d32"}},
+    )
 
     checks = _read_json(artifacts.root / "node-data" / "model-source" / "checks.json")
-    assert checks["main"]["name"] == "checks"
-    assert checks["main"]["results"] == {
-        "0": {"value": "missing quantization parameters", "bgColor": "#c62828"}
-    }
+    _ASSERT.assertEqual(checks["main"]["name"], "checks")
+    _ASSERT.assertEqual(
+        checks["main"]["results"],
+        {"0": {"value": "missing quantization parameters", "bgColor": "#c62828"}},
+    )
 
     advice = _read_json(artifacts.root / "node-data" / "model-source" / "advice.json")
-    assert advice["main"]["name"] == "advice"
-    assert advice["main"]["results"] == {
-        "0": {"value": "test advice", "bgColor": "#1565c0"}
-    }
+    _ASSERT.assertEqual(advice["main"]["name"], "advice")
+    _ASSERT.assertEqual(
+        advice["main"]["results"],
+        {"0": {"value": "test advice", "bgColor": "#1565c0"}},
+    )
 
 
 def test_write_artifacts_with_missing_standardized_output(
@@ -743,9 +763,9 @@ def test_write_artifacts_with_missing_standardized_output(
     )
 
     output = _read_json(artifacts.standardized_output)
-    assert output["results"] == []
-    assert output["model"]["name"] == "model.tflite"
-    assert artifacts.node_data == []
+    _ASSERT.assertEqual(output["results"], [])
+    _ASSERT.assertEqual(output["model"]["name"], "model.tflite")
+    _ASSERT.assertEqual(artifacts.node_data, [])
 
 
 def test_write_artifacts_without_model_copy_when_model_missing(tmp_path: Path) -> None:
@@ -753,8 +773,8 @@ def test_write_artifacts_without_model_copy_when_model_missing(tmp_path: Path) -
     artifacts = write_artifacts(_run_result(tmp_path, model_exists=False))
 
     manifest = _read_json(artifacts.manifest)
-    assert manifest["model_path"] is None
-    assert not (artifacts.root / "models" / "model.bin").exists()
+    _ASSERT.assertIs(manifest["model_path"], None)
+    _ASSERT.assertFalse((artifacts.root / "models" / "model.bin").exists())
 
 
 def test_write_artifacts_uses_materialized_output_model_without_cli_model(
@@ -777,7 +797,7 @@ def test_write_artifacts_uses_materialized_output_model_without_cli_model(
     model_data = b"captured SPIR-V"
     materialized = result.output_dir / "captured.spv"
     materialized.write_bytes(model_data)
-    assert isinstance(result.output, dict)
+    _ASSERT.assertIsInstance(result.output, dict)
     result.output["model"]["hash"] = hashlib.sha256(model_data).hexdigest()
     result.output["model"]["size_bytes"] = len(model_data)
     result.output["results"][0]["entities"].append(
@@ -791,11 +811,13 @@ def test_write_artifacts_uses_materialized_output_model_without_cli_model(
     generated = write_artifacts(result)
 
     manifest = _read_json(generated.manifest)
-    assert manifest["model_path"] == "models/captured-source.json"
+    _ASSERT.assertEqual(manifest["model_path"], "models/captured-source.json")
     mappings = _read_json(generated.entity_node_mappings)
-    assert any(
-        mapping["entityId"] == "source_operator/segment_0/spirv-60"
-        for mapping in mappings["results"][0]["mappings"]
+    _ASSERT.assertTrue(
+        any(
+            mapping["entityId"] == "source_operator/segment_0/spirv-60"
+            for mapping in mappings["results"][0]["mappings"]
+        ),
     )
 
 
@@ -843,10 +865,10 @@ def test_write_artifacts_skips_global_advice_without_affected_entity_ids(
         _run_result(tmp_path, output=output, model_exists=False)
     )
 
-    assert artifacts.node_data == []
-    assert not (
-        artifacts.root / "node-data" / "model-source" / "compatibility.json"
-    ).exists()
+    _ASSERT.assertEqual(artifacts.node_data, [])
+    _ASSERT.assertFalse(
+        (artifacts.root / "node-data" / "model-source" / "compatibility.json").exists(),
+    )
 
 
 def test_write_artifacts_uses_entity_references_for_node_data(
@@ -937,46 +959,61 @@ def test_write_artifacts_uses_entity_references_for_node_data(
         _run_result(tmp_path, output=output, model_name="model.tflite")
     )
 
-    assert [
-        path.relative_to(artifacts.root / "node-data").as_posix()
-        for path in artifacts.node_data
-    ] == [
-        "model-source/status.json",
-        "model-hierarchy-segment_cascade_chain/status.json",
-        "model-source/checks.json",
-        "model-hierarchy-segment_cascade_chain/checks.json",
-        "model-source/cycles.json",
-        "model-hierarchy-segment_cascade_chain/cycles.json",
-        "model-source/advice.json",
-        "model-hierarchy-segment_cascade_chain/advice.json",
-    ]
+    _ASSERT.assertEqual(
+        [
+            path.relative_to(artifacts.root / "node-data").as_posix()
+            for path in artifacts.node_data
+        ],
+        [
+            "model-source/status.json",
+            "model-hierarchy-segment_cascade_chain/status.json",
+            "model-source/checks.json",
+            "model-hierarchy-segment_cascade_chain/checks.json",
+            "model-source/cycles.json",
+            "model-hierarchy-segment_cascade_chain/cycles.json",
+            "model-source/advice.json",
+            "model-hierarchy-segment_cascade_chain/advice.json",
+        ],
+    )
     status = _read_json(artifacts.root / "node-data" / "model-source" / "status.json")
-    assert status["main"]["results"] == {
-        "0": {"value": "subgraph-status"},
-        "1": {"value": "source-status"},
-    }
+    _ASSERT.assertEqual(
+        status["main"]["results"],
+        {
+            "0": {"value": "subgraph-status"},
+            "1": {"value": "source-status"},
+        },
+    )
     cycles = _read_json(artifacts.root / "node-data" / "model-source" / "cycles.json")
-    assert cycles["main"]["results"] == {"1": {"value": 1}}
+    _ASSERT.assertEqual(cycles["main"]["results"], {"1": {"value": 1}})
     generated_cycles = _read_json(
         artifacts.root
         / "node-data"
         / "model-hierarchy-segment_cascade_chain"
         / "cycles.json"
     )
-    assert generated_cycles["segment_cascade_chain-main"]["results"] == {
-        "1": {"value": 1},
-        "subgraph": {"value": 100},
-    }
+    _ASSERT.assertEqual(
+        generated_cycles["segment_cascade_chain-main"]["results"],
+        {
+            "1": {"value": 1},
+            "subgraph": {"value": 100},
+        },
+    )
     checks = _read_json(artifacts.root / "node-data" / "model-source" / "checks.json")
-    assert checks["main"]["results"] == {
-        "0": {"value": "subgraph check", "bgColor": "#c62828"},
-        "1": {"value": "source check", "bgColor": "#c62828"},
-    }
+    _ASSERT.assertEqual(
+        checks["main"]["results"],
+        {
+            "0": {"value": "subgraph check", "bgColor": "#c62828"},
+            "1": {"value": "source check", "bgColor": "#c62828"},
+        },
+    )
     advice = _read_json(artifacts.root / "node-data" / "model-source" / "advice.json")
-    assert advice["main"]["results"] == {
-        "0": {"value": "source advice", "bgColor": "#f9a825"},
-        "1": {"value": "source advice", "bgColor": "#f9a825"},
-    }
+    _ASSERT.assertEqual(
+        advice["main"]["results"],
+        {
+            "0": {"value": "source advice", "bgColor": "#f9a825"},
+            "1": {"value": "source advice", "bgColor": "#f9a825"},
+        },
+    )
 
 
 def test_write_artifacts_maps_each_source_node_to_its_source_operator(
@@ -1020,25 +1057,30 @@ def test_write_artifacts_maps_each_source_node_to_its_source_operator(
     )
 
     mappings = _read_json(artifacts.entity_node_mappings)["results"][0]["mappings"]
-    assert mappings == [
-        {
-            "node": {
-                "collectionLabel": "Source Model",
-                "graphId": "main",
-                "nodeId": "0",
+    _ASSERT.assertEqual(
+        mappings,
+        [
+            {
+                "node": {
+                    "collectionLabel": "Source Model",
+                    "graphId": "main",
+                    "nodeId": "0",
+                },
+                "entityId": "source_operator/operator/0",
             },
-            "entityId": "source_operator/operator/0",
-        },
-        {
-            "node": {
-                "collectionLabel": "Source Model",
-                "graphId": "main",
-                "nodeId": "1",
+            {
+                "node": {
+                    "collectionLabel": "Source Model",
+                    "graphId": "main",
+                    "nodeId": "1",
+                },
+                "entityId": "source_operator/operator/1",
             },
-            "entityId": "source_operator/operator/1",
-        },
-    ]
-    assert all(mapping["entityId"] != "combined-ops" for mapping in mappings)
+        ],
+    )
+    _ASSERT.assertTrue(
+        all(mapping["entityId"] != "combined-ops" for mapping in mappings),
+    )
 
 
 def test_write_artifacts_groups_source_model_with_entity_namespaces(
@@ -1108,87 +1150,109 @@ def test_write_artifacts_groups_source_model_with_entity_namespaces(
         _run_result(tmp_path, output=output, model_name="model.vgf")
     )
 
-    assert [path.name for path in artifacts.generated_models] == [
-        "model-hierarchy-segment_cascade_chain.json"
-    ]
+    _ASSERT.assertEqual(
+        [path.name for path in artifacts.generated_models],
+        ["model-hierarchy-segment_cascade_chain.json"],
+    )
     source_model = _read_json(artifacts.root / "models" / "model-source.json")
-    assert (
-        source_model["graphs"][0]["nodes"]
-        == _FakeAdapter().convert(str(tmp_path / "model.vgf"), {})["graphs"][0]["nodes"]
+    _ASSERT.assertEqual(
+        source_model["graphs"][0]["nodes"],
+        _FakeAdapter().convert(str(tmp_path / "model.vgf"), {})["graphs"][0]["nodes"],
     )
     sync_navigation = _read_json(artifacts.sync_navigation)
-    assert {
-        "from": {
-            "collectionLabel": "segment_cascade_chain",
-            "graphId": "segment_cascade_chain-Main",
-            "nodeId": "cascade 0/chain 0___group___",
+    _ASSERT.assertIn(
+        {
+            "from": {
+                "collectionLabel": "segment_cascade_chain",
+                "graphId": "segment_cascade_chain-Main",
+                "nodeId": "cascade 0/chain 0___group___",
+            },
+            "to": {"Source Model": {"Main": ["0__op_0"]}},
         },
-        "to": {"Source Model": {"Main": ["0__op_0"]}},
-    } in sync_navigation["graphMappings"]
+        sync_navigation["graphMappings"],
+    )
     mappings = _read_json(artifacts.entity_node_mappings)["results"][0]["mappings"]
-    assert {
-        "node": {
-            "collectionLabel": "segment_cascade_chain",
-            "graphId": "segment_cascade_chain-Main",
-            "nodeId": "cascade 0___group___",
+    _ASSERT.assertIn(
+        {
+            "node": {
+                "collectionLabel": "segment_cascade_chain",
+                "graphId": "segment_cascade_chain-Main",
+                "nodeId": "cascade 0___group___",
+            },
+            "entityId": "cascade-0",
         },
-        "entityId": "cascade-0",
-    } in mappings
-    assert {
-        "node": {
-            "collectionLabel": "segment_cascade_chain",
-            "graphId": "segment_cascade_chain-Main",
-            "nodeId": "cascade 0/chain 0___group___",
+        mappings,
+    )
+    _ASSERT.assertIn(
+        {
+            "node": {
+                "collectionLabel": "segment_cascade_chain",
+                "graphId": "segment_cascade_chain-Main",
+                "nodeId": "cascade 0/chain 0___group___",
+            },
+            "entityId": "chain-0",
         },
-        "entityId": "chain-0",
-    } in mappings
-    assert {
-        "node": {
-            "collectionLabel": "Source Model",
-            "graphId": "Main",
-            "nodeId": "0__op_0",
+        mappings,
+    )
+    _ASSERT.assertIn(
+        {
+            "node": {
+                "collectionLabel": "Source Model",
+                "graphId": "Main",
+                "nodeId": "0__op_0",
+            },
+            "entityId": "source_operator/segment_0/spirv-0",
         },
-        "entityId": "source_operator/segment_0/spirv-0",
-    } in mappings
+        mappings,
+    )
     generated_source_operator_mappings = [
         mapping
         for mapping in mappings
         if mapping["node"]["collectionLabel"] == "segment_cascade_chain"
         and mapping["entityId"] == "source_operator/segment_0/spirv-0"
     ]
-    assert len(generated_source_operator_mappings) == 2
-    assert all(
-        "__mlia_sub_operator__" in mapping["node"]["nodeId"]
-        for mapping in generated_source_operator_mappings
+    _ASSERT.assertEqual(len(generated_source_operator_mappings), 2)
+    _ASSERT.assertTrue(
+        all(
+            "__mlia_sub_operator__" in mapping["node"]["nodeId"]
+            for mapping in generated_source_operator_mappings
+        ),
     )
     generated_source_operator_node_ids = {
-        mapping["node"]["nodeId"]
-        for mapping in generated_source_operator_mappings
+        mapping["node"]["nodeId"] for mapping in generated_source_operator_mappings
     }
-    assert not any(
-        mapping["node"]["collectionLabel"] == "Source Model"
-        and mapping["entityId"] in {"cascade-0", "chain-0"}
-        for mapping in mappings
+    _ASSERT.assertFalse(
+        any(
+            mapping["node"]["collectionLabel"] == "Source Model"
+            and mapping["entityId"] in {"cascade-0", "chain-0"}
+            for mapping in mappings
+        ),
     )
     entity_model = _read_json(
         artifacts.root / "models" / "model-hierarchy-segment_cascade_chain.json"
     )
-    assert entity_model["label"] == "segment_cascade_chain"
-    assert entity_model["graphs"][0]["id"] == "segment_cascade_chain-Main"
-    assert [node["namespace"] for node in entity_model["graphs"][0]["nodes"]] == [
-        "cascade 0/chain 0",
-        "chain 1",
-        "",
-    ]
-    assert [node["label"] for node in entity_model["graphs"][0]["nodes"]] == [
-        "model (#1)",
-        "model (#2)",
-        "consumer",
-    ]
+    _ASSERT.assertEqual(entity_model["label"], "segment_cascade_chain")
+    _ASSERT.assertEqual(entity_model["graphs"][0]["id"], "segment_cascade_chain-Main")
+    _ASSERT.assertEqual(
+        [node["namespace"] for node in entity_model["graphs"][0]["nodes"]],
+        [
+            "cascade 0/chain 0",
+            "chain 1",
+            "",
+        ],
+    )
+    _ASSERT.assertEqual(
+        [node["label"] for node in entity_model["graphs"][0]["nodes"]],
+        [
+            "model (#1)",
+            "model (#2)",
+            "consumer",
+        ],
+    )
     source_cycles = _read_json(
         artifacts.root / "node-data" / "model-source" / "cycles.json"
     )
-    assert source_cycles["Main"]["results"]["0__op_0"] == {"value": 1}
+    _ASSERT.assertEqual(source_cycles["Main"]["results"]["0__op_0"], {"value": 1})
 
     cycles = _read_json(
         artifacts.root
@@ -1197,21 +1261,30 @@ def test_write_artifacts_groups_source_model_with_entity_namespaces(
         / "cycles.json"
     )
     generated_cycle_results = cycles["segment_cascade_chain-Main"]["results"]
-    assert generated_cycle_results == {
-        "cascade 0": {"value": 10},
-        "cascade 0/chain 0": {"value": 100},
-    }
-    assert generated_source_operator_node_ids.isdisjoint(generated_cycle_results)
+    _ASSERT.assertEqual(
+        generated_cycle_results,
+        {
+            "cascade 0": {"value": 10},
+            "cascade 0/chain 0": {"value": 100},
+        },
+    )
+    _ASSERT.assertTrue(
+        generated_source_operator_node_ids.isdisjoint(generated_cycle_results),
+    )
 
     manifest = _read_json(artifacts.manifest)
-    assert manifest["model_path"] == "models/model-source.json"
-    assert manifest["model_paths"] == [
-        "models/model-source.json",
-        "models/model-hierarchy-segment_cascade_chain.json",
-    ]
-    assert manifest["generated_models"] == [
-        "models/model-hierarchy-segment_cascade_chain.json"
-    ]
+    _ASSERT.assertEqual(manifest["model_path"], "models/model-source.json")
+    _ASSERT.assertEqual(
+        manifest["model_paths"],
+        [
+            "models/model-source.json",
+            "models/model-hierarchy-segment_cascade_chain.json",
+        ],
+    )
+    _ASSERT.assertEqual(
+        manifest["generated_models"],
+        ["models/model-hierarchy-segment_cascade_chain.json"],
+    )
 
 
 def test_write_artifacts_preserves_escaped_source_namespace_mapping_prefixes(
@@ -1228,10 +1301,13 @@ def test_write_artifacts_preserves_escaped_source_namespace_mapping_prefixes(
 
     artifacts = write_artifacts(_run_result(tmp_path, model_name="model.vgf"))
 
-    assert _read_json(artifacts.sync_navigation) == {
-        "type": "sync_navigation",
-        "graphMappings": [],
-    }
+    _ASSERT.assertEqual(
+        _read_json(artifacts.sync_navigation),
+        {
+            "type": "sync_navigation",
+            "graphMappings": [],
+        },
+    )
 
 
 def test_write_artifacts_omits_leaf_mappings_for_matching_namespace_groups(
@@ -1275,10 +1351,13 @@ def test_write_artifacts_omits_leaf_mappings_for_matching_namespace_groups(
         _run_result(tmp_path, output=output, model_name="model.vgf")
     )
 
-    assert _read_json(artifacts.sync_navigation) == {
-        "type": "sync_navigation",
-        "graphMappings": [],
-    }
+    _ASSERT.assertEqual(
+        _read_json(artifacts.sync_navigation),
+        {
+            "type": "sync_navigation",
+            "graphMappings": [],
+        },
+    )
 
 
 def test_write_artifacts_keeps_statsless_parent_subgraphs_in_entity_namespaces(
@@ -1341,9 +1420,9 @@ def test_write_artifacts_keeps_statsless_parent_subgraphs_in_entity_namespaces(
     entity_model = _read_json(
         artifacts.root / "models" / "model-hierarchy-segment_cascade_chain.json"
     )
-    assert (
-        entity_model["graphs"][0]["nodes"][0]["namespace"]
-        == "segment 0/cascade 0/chain 0"
+    _ASSERT.assertEqual(
+        entity_model["graphs"][0]["nodes"][0]["namespace"],
+        "segment 0/cascade 0/chain 0",
     )
     cycles = _read_json(
         artifacts.root
@@ -1351,10 +1430,13 @@ def test_write_artifacts_keeps_statsless_parent_subgraphs_in_entity_namespaces(
         / "model-hierarchy-segment_cascade_chain"
         / "cycles.json"
     )
-    assert cycles["segment_cascade_chain-Main"]["results"] == {
-        "segment 0/cascade 0": {"value": 10},
-        "segment 0/cascade 0/chain 0": {"value": 100},
-    }
+    _ASSERT.assertEqual(
+        cycles["segment_cascade_chain-Main"]["results"],
+        {
+            "segment 0/cascade 0": {"value": 10},
+            "segment 0/cascade 0/chain 0": {"value": 100},
+        },
+    )
 
 
 def test_complete_entity_paths_strip_visible_parent_name_prefixes() -> None:
@@ -1384,11 +1466,14 @@ def test_complete_entity_paths_strip_visible_parent_name_prefixes() -> None:
         entities, hierarchy, set()
     )
 
-    assert projection.entity_paths_by_id == {
-        "segment-10": ("graph_segment_10",),
-        "cascade-1": ("graph_segment_10/Cascade 1",),
-        "chain-2": ("graph_segment_10/Cascade 1/Chain 2",),
-    }
+    _ASSERT.assertEqual(
+        projection.entity_paths_by_id,
+        {
+            "segment-10": ("graph_segment_10",),
+            "cascade-1": ("graph_segment_10/Cascade 1",),
+            "chain-2": ("graph_segment_10/Cascade 1/Chain 2",),
+        },
+    )
 
 
 def test_complete_entity_paths_keep_hidden_parent_context(monkeypatch) -> None:
@@ -1425,10 +1510,13 @@ def test_complete_entity_paths_keep_hidden_parent_context(monkeypatch) -> None:
         {"cascade-1", "chain-2"},
     )
 
-    assert projection.entity_paths_by_id == {
-        "cascade-1": (r"graph_segment_10\/Cascade 1",),
-        "chain-2": (r"graph_segment_10\/Cascade 1/Chain 2",),
-    }
+    _ASSERT.assertEqual(
+        projection.entity_paths_by_id,
+        {
+            "cascade-1": (r"graph_segment_10\/Cascade 1",),
+            "chain-2": (r"graph_segment_10\/Cascade 1/Chain 2",),
+        },
+    )
 
 
 def test_complete_entity_paths_are_unique_and_deterministic() -> None:
@@ -1451,25 +1539,16 @@ def test_complete_entity_paths_are_unique_and_deterministic() -> None:
     }
     hierarchy = _test_hierarchy("segment_cascade_chain")
 
-    first = graphs_module._entity_hierarchy_complete_paths(
-        entities, hierarchy, set()
-    )
+    first = graphs_module._entity_hierarchy_complete_paths(entities, hierarchy, set())
     reordered = graphs_module._entity_hierarchy_complete_paths(
         dict(reversed(list(entities.items()))), hierarchy, set()
     )
 
-    assert first == reordered
-    all_paths = [
-        path
-        for paths in first.entity_paths_by_id.values()
-        for path in paths
-    ]
-    normalized = [
-        model_explorer_normalized_namespace(path)
-        for path in all_paths
-    ]
-    assert all(normalized)
-    assert len(normalized) == len(set(normalized))
+    _ASSERT.assertEqual(first, reordered)
+    all_paths = [path for paths in first.entity_paths_by_id.values() for path in paths]
+    normalized = [model_explorer_normalized_namespace(path) for path in all_paths]
+    _ASSERT.assertTrue(all(normalized))
+    _ASSERT.assertEqual(len(normalized), len(set(normalized)))
 
 
 def test_complete_entity_paths_enumerate_multi_parent_paths() -> None:
@@ -1495,13 +1574,19 @@ def test_complete_entity_paths_enumerate_multi_parent_paths() -> None:
         entities, hierarchy, set()
     )
 
-    assert projection.entity_paths_by_id["chain"] == (
-        "Cascade A/Chain",
-        "Cascade B/Chain",
+    _ASSERT.assertEqual(
+        projection.entity_paths_by_id["chain"],
+        (
+            "Cascade A/Chain",
+            "Cascade B/Chain",
+        ),
     )
-    assert projection.source_operator_paths_by_id["op"] == (
-        "Cascade A/Chain",
-        "Cascade B/Chain",
+    _ASSERT.assertEqual(
+        projection.source_operator_paths_by_id["op"],
+        (
+            "Cascade A/Chain",
+            "Cascade B/Chain",
+        ),
     )
 
 
@@ -1578,22 +1663,28 @@ def test_write_artifacts_disambiguates_duplicate_entity_namespace_names(
     entity_model = _read_json(
         artifacts.root / "models" / "model-hierarchy-segment_cascade_chain.json"
     )
-    assert [node["namespace"] for node in entity_model["graphs"][0]["nodes"]] == [
-        "duplicate [cascade-a]/op [chain-a]",
-        "duplicate [cascade-b]/op [chain-b]",
-    ]
+    _ASSERT.assertEqual(
+        [node["namespace"] for node in entity_model["graphs"][0]["nodes"]],
+        [
+            "duplicate [cascade-a]/op [chain-a]",
+            "duplicate [cascade-b]/op [chain-b]",
+        ],
+    )
     cycles = _read_json(
         artifacts.root
         / "node-data"
         / "model-hierarchy-segment_cascade_chain"
         / "cycles.json"
     )
-    assert cycles["segment_cascade_chain-Main"]["results"] == {
-        "duplicate [cascade-a]": {"value": 10},
-        "duplicate [cascade-a]/op [chain-a]": {"value": 100},
-        "duplicate [cascade-b]": {"value": 20},
-        "duplicate [cascade-b]/op [chain-b]": {"value": 200},
-    }
+    _ASSERT.assertEqual(
+        cycles["segment_cascade_chain-Main"]["results"],
+        {
+            "duplicate [cascade-a]": {"value": 10},
+            "duplicate [cascade-a]/op [chain-a]": {"value": 100},
+            "duplicate [cascade-b]": {"value": 20},
+            "duplicate [cascade-b]/op [chain-b]": {"value": 200},
+        },
+    )
 
 
 def test_write_artifacts_escapes_entity_name_namespace_separators(
@@ -1650,29 +1741,38 @@ def test_write_artifacts_escapes_entity_name_namespace_separators(
     entity_model = _read_json(
         artifacts.root / "models" / "model-hierarchy-segment_cascade_chain.json"
     )
-    assert entity_model["graphs"][0]["nodes"][0]["namespace"] == r"cascade\/0/chain\/0"
+    _ASSERT.assertEqual(
+        entity_model["graphs"][0]["nodes"][0]["namespace"],
+        r"cascade\/0/chain\/0",
+    )
     sync_navigation = _read_json(artifacts.sync_navigation)
     generated_group_ids = {
         entry["from"]["nodeId"]
         for entry in sync_navigation["graphMappings"]
         if entry["from"]["collectionLabel"] == "segment_cascade_chain"
     }
-    assert generated_group_ids == {
-        "0__op_0",
-        "0__op_1",
-        r"cascade\/0___group___",
-        r"cascade\/0/chain\/0___group___",
-    }
+    _ASSERT.assertEqual(
+        generated_group_ids,
+        {
+            "0__op_0",
+            "0__op_1",
+            r"cascade\/0___group___",
+            r"cascade\/0/chain\/0___group___",
+        },
+    )
     cycles = _read_json(
         artifacts.root
         / "node-data"
         / "model-hierarchy-segment_cascade_chain"
         / "cycles.json"
     )
-    assert cycles["segment_cascade_chain-Main"]["results"] == {
-        r"cascade\/0": {"value": 10},
-        r"cascade\/0/chain\/0": {"value": 100},
-    }
+    _ASSERT.assertEqual(
+        cycles["segment_cascade_chain-Main"]["results"],
+        {
+            r"cascade\/0": {"value": 10},
+            r"cascade\/0/chain\/0": {"value": 100},
+        },
+    )
 
 
 def test_write_artifacts_keeps_parent_subgraphs_result_local(
@@ -1744,10 +1844,13 @@ def test_write_artifacts_keeps_parent_subgraphs_result_local(
         _run_result(tmp_path, output=output, model_name="model.vgf")
     )
 
-    assert [path.name for path in artifacts.generated_models] == [
-        "model-hierarchy-segment_cascade_chain-result-1.json",
-        "model-hierarchy-segment_cascade_chain-result-2.json",
-    ]
+    _ASSERT.assertEqual(
+        [path.name for path in artifacts.generated_models],
+        [
+            "model-hierarchy-segment_cascade_chain-result-1.json",
+            "model-hierarchy-segment_cascade_chain-result-2.json",
+        ],
+    )
     performance_model = _read_json(
         artifacts.root
         / "models"
@@ -1758,15 +1861,21 @@ def test_write_artifacts_keeps_parent_subgraphs_result_local(
         / "models"
         / "model-hierarchy-segment_cascade_chain-result-2.json"
     )
-    assert performance_model["label"] == (
-        "segment_cascade_chain [performance result 1]"
+    _ASSERT.assertEqual(
+        performance_model["label"],
+        "segment_cascade_chain [performance result 1]",
     )
-    assert memory_model["label"] == "segment_cascade_chain [memory result 2]"
-    assert performance_model["graphs"][0]["nodes"][0]["namespace"] == (
-        "segment 0/cascade 0/chain 0"
+    _ASSERT.assertEqual(
+        memory_model["label"],
+        "segment_cascade_chain [memory result 2]",
     )
-    assert memory_model["graphs"][0]["nodes"][0]["namespace"] == (
-        "segment 0/cascade 0/chain 0"
+    _ASSERT.assertEqual(
+        performance_model["graphs"][0]["nodes"][0]["namespace"],
+        "segment 0/cascade 0/chain 0",
+    )
+    _ASSERT.assertEqual(
+        memory_model["graphs"][0]["nodes"][0]["namespace"],
+        "segment 0/cascade 0/chain 0",
     )
     cycles = _read_json(
         artifacts.root
@@ -1774,21 +1883,25 @@ def test_write_artifacts_keeps_parent_subgraphs_result_local(
         / "model-hierarchy-segment_cascade_chain-result-1"
         / "cycles.json"
     )
-    assert cycles["segment_cascade_chain-result-1-Main"]["results"] == {
-        "segment 0/cascade 0": {"value": 10},
-        "segment 0/cascade 0/chain 0": {"value": 100},
-    }
-    assert "segment_cascade_chain-result-2-Main" not in cycles
+    _ASSERT.assertEqual(
+        cycles["segment_cascade_chain-result-1-Main"]["results"],
+        {
+            "segment 0/cascade 0": {"value": 10},
+            "segment 0/cascade 0/chain 0": {"value": 100},
+        },
+    )
+    _ASSERT.assertNotIn("segment_cascade_chain-result-2-Main", cycles)
     memory = _read_json(
         artifacts.root
         / "node-data"
         / "model-hierarchy-segment_cascade_chain-result-2"
         / "bytes.json"
     )
-    assert memory["segment_cascade_chain-result-2-Main"]["results"] == {
-        "segment 0": {"value": 1000}
-    }
-    assert "segment_cascade_chain-result-1-Main" not in memory
+    _ASSERT.assertEqual(
+        memory["segment_cascade_chain-result-2-Main"]["results"],
+        {"segment 0": {"value": 1000}},
+    )
+    _ASSERT.assertNotIn("segment_cascade_chain-result-1-Main", memory)
 
 
 def test_write_artifacts_uses_builtin_source_operator_metadata_relationship(
@@ -1835,13 +1948,14 @@ def test_write_artifacts_uses_builtin_source_operator_metadata_relationship(
         _run_result(tmp_path, output=output, model_name="model.vgf")
     )
 
-    assert [path.name for path in artifacts.generated_models] == [
-        "model-hierarchy-segment_cascade_chain.json"
-    ]
+    _ASSERT.assertEqual(
+        [path.name for path in artifacts.generated_models],
+        ["model-hierarchy-segment_cascade_chain.json"],
+    )
     entity_model = _read_json(
         artifacts.root / "models" / "model-hierarchy-segment_cascade_chain.json"
     )
-    assert entity_model["graphs"][0]["nodes"][0]["namespace"] == "chain 0"
+    _ASSERT.assertEqual(entity_model["graphs"][0]["nodes"][0]["namespace"], "chain 0")
 
 
 def test_write_artifacts_uses_parent_ids_as_canonical_visual_tree(
@@ -1914,8 +2028,8 @@ def test_write_artifacts_uses_parent_ids_as_canonical_visual_tree(
         artifacts.root / "models" / "model-hierarchy-segment_cascade_chain.json"
     )
     nodes = entity_model["graphs"][0]["nodes"]
-    assert nodes[0]["namespace"] == "cascade B/chain conflict"
-    assert nodes[1]["namespace"] == "cascade A/chain orphan"
+    _ASSERT.assertEqual(nodes[0]["namespace"], "cascade B/chain conflict")
+    _ASSERT.assertEqual(nodes[1]["namespace"], "cascade A/chain orphan")
 
 
 def test_write_artifacts_uses_child_ids_when_parent_ids_are_absent(
@@ -1974,9 +2088,9 @@ def test_write_artifacts_uses_child_ids_when_parent_ids_are_absent(
     entity_model = _read_json(
         artifacts.root / "models" / "model-hierarchy-segment_cascade_chain.json"
     )
-    assert (
-        entity_model["graphs"][0]["nodes"][0]["namespace"]
-        == "segment 0/cascade 0/chain 0"
+    _ASSERT.assertEqual(
+        entity_model["graphs"][0]["nodes"][0]["namespace"],
+        "segment 0/cascade 0/chain 0",
     )
 
 
@@ -2044,43 +2158,56 @@ def test_write_artifacts_emits_separate_overlays_per_result_field(
         _run_result(tmp_path, output=output, model_name="model.tflite")
     )
 
-    assert [path.name for path in artifacts.node_data] == [
-        "status.json",
-        "npu_cycles.json",
-        "sram (bytes).json",
-        "advice.json",
-    ]
+    _ASSERT.assertEqual(
+        [path.name for path in artifacts.node_data],
+        [
+            "status.json",
+            "npu_cycles.json",
+            "sram (bytes).json",
+            "advice.json",
+        ],
+    )
 
     status = _read_json(artifacts.root / "node-data" / "model-source" / "status.json")
-    assert status["main"]["results"] == {"0": {"value": "estimated"}}
+    _ASSERT.assertEqual(status["main"]["results"], {"0": {"value": "estimated"}})
 
     npu_cycles = _read_json(
         artifacts.root / "node-data" / "model-source" / "npu_cycles.json"
     )
-    assert npu_cycles["main"]["name"] == "npu_cycles"
-    assert npu_cycles["main"]["gradient"] == [
-        {"stop": 0, "bgColor": "#2e7d32"},
-        {"stop": 1, "bgColor": "#c62828"},
-    ]
-    assert npu_cycles["main"]["results"] == {
-        "0": {"value": 123},
-        "1": {"value": 7},
-    }
+    _ASSERT.assertEqual(npu_cycles["main"]["name"], "npu_cycles")
+    _ASSERT.assertEqual(
+        npu_cycles["main"]["gradient"],
+        [
+            {"stop": 0, "bgColor": "#2e7d32"},
+            {"stop": 1, "bgColor": "#c62828"},
+        ],
+    )
+    _ASSERT.assertEqual(
+        npu_cycles["main"]["results"],
+        {
+            "0": {"value": 123},
+            "1": {"value": 7},
+        },
+    )
 
     sram = _read_json(
         artifacts.root / "node-data" / "model-source" / "sram (bytes).json"
     )
-    assert sram["main"]["name"] == "sram (bytes)"
-    assert sram["main"]["results"] == {
-        "0": {"value": 456},
-        "1": {"value": "extra"},
-    }
+    _ASSERT.assertEqual(sram["main"]["name"], "sram (bytes)")
+    _ASSERT.assertEqual(
+        sram["main"]["results"],
+        {
+            "0": {"value": 456},
+            "1": {"value": "extra"},
+        },
+    )
 
     advice = _read_json(artifacts.root / "node-data" / "model-source" / "advice.json")
-    assert advice["main"]["name"] == "advice"
-    assert advice["main"]["results"] == {
-        "0": {"value": "try another layout", "bgColor": "#f9a825"}
-    }
+    _ASSERT.assertEqual(advice["main"]["name"], "advice")
+    _ASSERT.assertEqual(
+        advice["main"]["results"],
+        {"0": {"value": "try another layout", "bgColor": "#f9a825"}},
+    )
 
 
 def _metric_overlay_output(breakdowns: list[dict]) -> dict:
@@ -2185,16 +2312,17 @@ def test_source_namespace_metrics_are_projected_through_faithful_hierarchy(
         _run_result(tmp_path, output=output, model_name="model.tflite")
     )
 
-    cycles = _read_json(
-        generated.root / "node-data" / "model-source" / "cycles.json"
+    cycles = _read_json(generated.root / "node-data" / "model-source" / "cycles.json")
+    _ASSERT.assertEqual(
+        cycles["main"]["results"],
+        {
+            "0": {"value": 10},
+            "1": {"value": 20},
+            "stage___group___": {"value": 30},
+            "stage/convolution___group___": {"value": 10},
+            "stage/resize___group___": {"value": 20},
+        },
     )
-    assert cycles["main"]["results"] == {
-        "0": {"value": 10},
-        "1": {"value": 20},
-        "stage___group___": {"value": 30},
-        "stage/convolution___group___": {"value": 10},
-        "stage/resize___group___": {"value": 20},
-    }
 
 
 def test_source_namespace_metrics_use_explicit_group_ids_when_tensor_names_collide(
@@ -2227,14 +2355,15 @@ def test_source_namespace_metrics_use_explicit_group_ids_when_tensor_names_colli
         _run_result(tmp_path, output=output, model_name="model.tflite")
     )
 
-    cycles = _read_json(
-        generated.root / "node-data" / "model-source" / "cycles.json"
+    cycles = _read_json(generated.root / "node-data" / "model-source" / "cycles.json")
+    _ASSERT.assertEqual(
+        cycles["main"]["results"],
+        {
+            "0": {"value": 10},
+            "stage___group___": {"value": 10},
+            "stage/convolution___group___": {"value": 10},
+        },
     )
-    assert cycles["main"]["results"] == {
-        "0": {"value": 10},
-        "stage___group___": {"value": 10},
-        "stage/convolution___group___": {"value": 10},
-    }
 
 
 def test_source_namespace_metrics_copy_complete_parent_entity_figures(
@@ -2256,9 +2385,7 @@ def test_source_namespace_metrics_copy_complete_parent_entity_figures(
         "results": [
             {
                 "kind": "performance",
-                "entity_kinds": [
-                    {"id": "chain", "child_kinds": ["source_operator"]}
-                ],
+                "entity_kinds": [{"id": "chain", "child_kinds": ["source_operator"]}],
                 "entities": [
                     {
                         "id": "chain/0",
@@ -2303,12 +2430,11 @@ def test_source_namespace_metrics_copy_complete_parent_entity_figures(
         _run_result(tmp_path, output=output, model_name="model.tflite")
     )
 
-    cycles = _read_json(
-        generated.root / "node-data" / "model-source" / "cycles.json"
+    cycles = _read_json(generated.root / "node-data" / "model-source" / "cycles.json")
+    _ASSERT.assertEqual(
+        cycles["main"]["results"],
+        {"stage___group___": {"value": 30}},
     )
-    assert cycles["main"]["results"] == {
-        "stage___group___": {"value": 30}
-    }
 
 
 def test_metric_qualifiers_create_distinct_overlays_without_merging_values(
@@ -2364,44 +2490,56 @@ def test_metric_qualifiers_create_distinct_overlays_without_merging_values(
         _run_result(tmp_path, output=output, model_name="model.tflite")
     )
 
-    assert [path.name for path in artifacts.node_data] == [
-        "latency (ms) [engine=cpu].json",
-        "latency (ms) [engine=npu].json",
-    ]
-    assert [_read_json(path)["main"]["name"] for path in artifacts.node_data] == [
-        "latency (ms) [engine=cpu]",
-        "latency (ms) [engine=npu]",
-    ]
-    assert [_read_json(path)["main"]["results"] for path in artifacts.node_data] == [
-        {"0": {"value": 20}},
-        {"0": {"value": 10}},
-    ]
-    assert _read_json(artifacts.manifest)["nodeDataOverlayKeysAndDisplayNames"] == [
-        {
-            "overlayKey": {
-                "resultIndex": 0,
-                "resultKind": "performance",
-                "category": "metric",
-                "name": "latency",
-                "unit": "ms",
-                "breakdownQualifiers": {},
-                "metricQualifiers": {"engine": "cpu"},
+    _ASSERT.assertEqual(
+        [path.name for path in artifacts.node_data],
+        [
+            "latency (ms) [engine=cpu].json",
+            "latency (ms) [engine=npu].json",
+        ],
+    )
+    _ASSERT.assertEqual(
+        [_read_json(path)["main"]["name"] for path in artifacts.node_data],
+        [
+            "latency (ms) [engine=cpu]",
+            "latency (ms) [engine=npu]",
+        ],
+    )
+    _ASSERT.assertEqual(
+        [_read_json(path)["main"]["results"] for path in artifacts.node_data],
+        [
+            {"0": {"value": 20}},
+            {"0": {"value": 10}},
+        ],
+    )
+    _ASSERT.assertEqual(
+        _read_json(artifacts.manifest)["nodeDataOverlayKeysAndDisplayNames"],
+        [
+            {
+                "overlayKey": {
+                    "resultIndex": 0,
+                    "resultKind": "performance",
+                    "category": "metric",
+                    "name": "latency",
+                    "unit": "ms",
+                    "breakdownQualifiers": {},
+                    "metricQualifiers": {"engine": "cpu"},
+                },
+                "displayName": "latency (ms) [engine=cpu]",
             },
-            "displayName": "latency (ms) [engine=cpu]",
-        },
-        {
-            "overlayKey": {
-                "resultIndex": 0,
-                "resultKind": "performance",
-                "category": "metric",
-                "name": "latency",
-                "unit": "ms",
-                "breakdownQualifiers": {},
-                "metricQualifiers": {"engine": "npu"},
+            {
+                "overlayKey": {
+                    "resultIndex": 0,
+                    "resultKind": "performance",
+                    "category": "metric",
+                    "name": "latency",
+                    "unit": "ms",
+                    "breakdownQualifiers": {},
+                    "metricQualifiers": {"engine": "npu"},
+                },
+                "displayName": "latency (ms) [engine=npu]",
             },
-            "displayName": "latency (ms) [engine=npu]",
-        },
-    ]
+        ],
+    )
 
 
 def test_breakdown_qualifiers_create_distinct_overlays_without_merging_values(
@@ -2450,14 +2588,20 @@ def test_breakdown_qualifiers_create_distinct_overlays_without_merging_values(
         _run_result(tmp_path, output=output, model_name="model.tflite")
     )
 
-    assert [path.name for path in artifacts.node_data] == [
-        "cycles [phase=cold].json",
-        "cycles [phase=warm].json",
-    ]
-    assert [_read_json(path)["main"]["results"] for path in artifacts.node_data] == [
-        {"0": {"value": 20}},
-        {"0": {"value": 10}},
-    ]
+    _ASSERT.assertEqual(
+        [path.name for path in artifacts.node_data],
+        [
+            "cycles [phase=cold].json",
+            "cycles [phase=warm].json",
+        ],
+    )
+    _ASSERT.assertEqual(
+        [_read_json(path)["main"]["results"] for path in artifacts.node_data],
+        [
+            {"0": {"value": 20}},
+            {"0": {"value": 10}},
+        ],
+    )
 
 
 def test_breakdown_and_metric_qualifier_scopes_remain_distinct(
@@ -2522,16 +2666,22 @@ def test_breakdown_and_metric_qualifier_scopes_remain_distinct(
         _run_result(tmp_path, output=output, model_name="model.tflite")
     )
 
-    assert [path.name for path in artifacts.node_data] == [
-        "cycles [metric phase=warm].json",
-        "cycles [breakdown phase=warm].json",
-        "cycles [breakdown phase=warm; metric phase=warm].json",
-    ]
-    assert [_read_json(path)["main"]["results"] for path in artifacts.node_data] == [
-        {"0": {"value": 20}},
-        {"0": {"value": 10}},
-        {"0": {"value": 30}},
-    ]
+    _ASSERT.assertEqual(
+        [path.name for path in artifacts.node_data],
+        [
+            "cycles [metric phase=warm].json",
+            "cycles [breakdown phase=warm].json",
+            "cycles [breakdown phase=warm; metric phase=warm].json",
+        ],
+    )
+    _ASSERT.assertEqual(
+        [_read_json(path)["main"]["results"] for path in artifacts.node_data],
+        [
+            {"0": {"value": 20}},
+            {"0": {"value": 10}},
+            {"0": {"value": 30}},
+        ],
+    )
 
 
 def test_qualifier_canonicalization_preserves_json_types_and_object_order() -> None:
@@ -2555,14 +2705,15 @@ def test_qualifier_canonicalization_preserves_json_types_and_object_order() -> N
         }
     )
 
-    assert first is not None
-    assert reordered is not None
-    assert first == reordered
-    assert hash(first) == hash(reordered)
-    assert node_data_module._qualifier_summary(first) == (
-        'config={"enabled":false,"shape":[1,2.5,true,"2",null]}; optional=null'
+    _ASSERT.assertIsNot(first, None)
+    _ASSERT.assertIsNot(reordered, None)
+    _ASSERT.assertEqual(first, reordered)
+    _ASSERT.assertEqual(hash(first), hash(reordered))
+    _ASSERT.assertEqual(
+        node_data_module._qualifier_summary(first),
+        'config={"enabled":false,"shape":[1,2.5,true,"2",null]}; optional=null',
     )
-    assert (
+    _ASSERT.assertEqual(
         len(
             {
                 node_data_module._canonical_qualifiers({"value": None}),
@@ -2573,20 +2724,26 @@ def test_qualifier_canonicalization_preserves_json_types_and_object_order() -> N
                 node_data_module._canonical_qualifiers({"value": [0]}),
                 node_data_module._canonical_qualifiers({"value": {"item": 0}}),
             }
-        )
-        == 7
+        ),
+        7,
     )
     cycle: dict[str, object] = {}
     cycle["self"] = cycle
-    assert (
+    _ASSERT.assertIs(
         node_data_module._canonical_qualifiers(
             {"kept": "value", "invalid": object(), "not_finite": float("nan")}
-        )
-        is None
+        ),
+        None,
     )
-    assert node_data_module._canonical_qualifiers({"cycle": cycle}) is None
-    assert node_data_module._canonical_qualifiers({1: "not a string key"}) is None
-    assert node_data_module._canonical_qualifiers(["not", "an", "object"]) is None
+    _ASSERT.assertIs(node_data_module._canonical_qualifiers({"cycle": cycle}), None)
+    _ASSERT.assertIs(
+        node_data_module._canonical_qualifiers({1: "not a string key"}),
+        None,
+    )
+    _ASSERT.assertIs(
+        node_data_module._canonical_qualifiers(["not", "an", "object"]),
+        None,
+    )
 
 
 def test_overlay_key_json_restores_complete_typed_qualifiers() -> None:
@@ -2602,7 +2759,7 @@ def test_overlay_key_json_restores_complete_typed_qualifiers() -> None:
             "object": {"nested": "value"},
         }
     )
-    assert qualifiers is not None
+    _ASSERT.assertIsNot(qualifiers, None)
 
     serialized = serialization_module._overlay_key_json(
         artifact_models._OverlayKey(
@@ -2615,25 +2772,28 @@ def test_overlay_key_json_restores_complete_typed_qualifiers() -> None:
         )
     )
 
-    assert serialized == {
-        "resultIndex": 2,
-        "resultKind": "performance",
-        "category": "metric",
-        "name": "latency",
-        "unit": "ms",
-        "breakdownQualifiers": {},
-        "metricQualifiers": {
-            "array": [0, False],
-            "boolean": True,
-            "float": 1.0,
-            "integer": 1,
-            "null": None,
-            "object": {"nested": "value"},
-            "string": "value",
+    _ASSERT.assertEqual(
+        serialized,
+        {
+            "resultIndex": 2,
+            "resultKind": "performance",
+            "category": "metric",
+            "name": "latency",
+            "unit": "ms",
+            "breakdownQualifiers": {},
+            "metricQualifiers": {
+                "array": [0, False],
+                "boolean": True,
+                "float": 1.0,
+                "integer": 1,
+                "null": None,
+                "object": {"nested": "value"},
+                "string": "value",
+            },
         },
-    }
-    assert type(serialized["metricQualifiers"]["integer"]) is int
-    assert type(serialized["metricQualifiers"]["float"]) is float
+    )
+    _ASSERT.assertIs(type(serialized["metricQualifiers"]["integer"]), int)
+    _ASSERT.assertIs(type(serialized["metricQualifiers"]["float"]), float)
 
 
 def test_long_qualifier_naming_is_bounded_and_deterministic(
@@ -2662,19 +2822,24 @@ def test_long_qualifier_naming_is_bounded_and_deterministic(
     first = _write_metric_overlay_artifacts(first_dir, monkeypatch, breakdowns)
     second = _write_metric_overlay_artifacts(second_dir, monkeypatch, breakdowns)
 
-    assert [path.name for path in first.node_data] == [
-        path.name for path in second.node_data
-    ]
-    display_name = _read_json(first.node_data[0])["main"]["name"]
-    assert display_name.startswith("latency (ms) [engine=")
-    assert "n" * 300 not in display_name
-    digest = display_name.rsplit("…#", 1)[1].removesuffix("]")
-    assert len(digest) == node_data_module._STABLE_DIGEST_HEX_LENGTH
-    assert all(character in "0123456789abcdef" for character in digest)
-    assert len(first.node_data[0].name.encode("utf-8")) <= (
-        serialization_module._MAX_FILENAME_COMPONENT_BYTES
+    _ASSERT.assertEqual(
+        [path.name for path in first.node_data],
+        [path.name for path in second.node_data],
     )
-    assert _read_json(first.node_data[0])["main"]["results"] == {"0": {"value": 7}}
+    display_name = _read_json(first.node_data[0])["main"]["name"]
+    _ASSERT.assertTrue(display_name.startswith("latency (ms) [engine="))
+    _ASSERT.assertNotIn("n" * 300, display_name)
+    digest = display_name.rsplit("…#", 1)[1].removesuffix("]")
+    _ASSERT.assertEqual(len(digest), node_data_module._STABLE_DIGEST_HEX_LENGTH)
+    _ASSERT.assertTrue(all(character in "0123456789abcdef" for character in digest))
+    _ASSERT.assertLessEqual(
+        len(first.node_data[0].name.encode("utf-8")),
+        serialization_module._MAX_FILENAME_COMPONENT_BYTES,
+    )
+    _ASSERT.assertEqual(
+        _read_json(first.node_data[0])["main"]["results"],
+        {"0": {"value": 7}},
+    )
 
 
 def test_large_nested_qualifiers_generate_with_bounded_names(
@@ -2707,12 +2872,15 @@ def test_large_nested_qualifiers_generate_with_bounded_names(
     )
 
     graph = _read_json(artifacts.node_data[0])["main"]
-    assert graph["name"].startswith('cycles [config={"enabled":true,"layers":[')
-    assert "…#" in graph["name"]
-    assert len(artifacts.node_data[0].name.encode("utf-8")) <= (
-        serialization_module._MAX_FILENAME_COMPONENT_BYTES
+    _ASSERT.assertTrue(
+        graph["name"].startswith('cycles [config={"enabled":true,"layers":['),
     )
-    assert graph["results"] == {"0": {"value": 11}}
+    _ASSERT.assertIn("…#", graph["name"])
+    _ASSERT.assertLessEqual(
+        len(artifacts.node_data[0].name.encode("utf-8")),
+        serialization_module._MAX_FILENAME_COMPONENT_BYTES,
+    )
+    _ASSERT.assertEqual(graph["results"], {"0": {"value": 11}})
 
 
 def test_long_qualifiers_with_identical_prefixes_remain_distinct(
@@ -2745,13 +2913,19 @@ def test_long_qualifiers_with_identical_prefixes_remain_distinct(
 
     graphs = [_read_json(path)["main"] for path in artifacts.node_data]
     display_names = [graph["name"] for graph in graphs]
-    assert len(set(display_names)) == 2
-    assert display_names[0].split("…#", 1)[0] == display_names[1].split("…#", 1)[0]
-    assert len({path.name.casefold() for path in artifacts.node_data}) == 2
-    assert [graph["results"] for graph in graphs] == [
-        {"0": {"value": 1}},
-        {"0": {"value": 2}},
-    ]
+    _ASSERT.assertEqual(len(set(display_names)), 2)
+    _ASSERT.assertEqual(
+        display_names[0].split("…#", 1)[0],
+        display_names[1].split("…#", 1)[0],
+    )
+    _ASSERT.assertEqual(len({path.name.casefold() for path in artifacts.node_data}), 2)
+    _ASSERT.assertEqual(
+        [graph["results"] for graph in graphs],
+        [
+            {"0": {"value": 1}},
+            {"0": {"value": 2}},
+        ],
+    )
 
 
 def test_qualifier_filename_normalization_collisions_are_allocated(
@@ -2782,12 +2956,18 @@ def test_qualifier_filename_normalization_collisions_are_allocated(
     )
 
     graphs = [_read_json(path)["main"] for path in artifacts.node_data]
-    assert graphs[0]["name"] != graphs[1]["name"]
-    assert artifacts.node_data[1].stem == f"{artifacts.node_data[0].stem} (2)"
-    assert [graph["results"] for graph in graphs] == [
-        {"0": {"value": 1}},
-        {"0": {"value": 2}},
-    ]
+    _ASSERT.assertNotEqual(graphs[0]["name"], graphs[1]["name"])
+    _ASSERT.assertEqual(
+        artifacts.node_data[1].stem,
+        f"{artifacts.node_data[0].stem} (2)",
+    )
+    _ASSERT.assertEqual(
+        [graph["results"] for graph in graphs],
+        [
+            {"0": {"value": 1}},
+            {"0": {"value": 2}},
+        ],
+    )
 
 
 @pytest.mark.parametrize(
@@ -2813,7 +2993,7 @@ def test_safe_filename_escapes_windows_superscript_device_names(
     value: str, expected: str
 ) -> None:
     """Windows superscript device aliases are unsafe with any case or extension."""
-    assert serialization_module._safe_filename(value) == expected
+    _ASSERT.assertEqual(serialization_module._safe_filename(value), expected)
 
 
 @pytest.mark.parametrize(
@@ -2833,7 +3013,7 @@ def test_safe_filename_keeps_existing_reserved_and_lookalike_behavior(
     value: str, expected: str
 ) -> None:
     """The superscript fix does not broaden matching beyond device-name stems."""
-    assert serialization_module._safe_filename(value) == expected
+    _ASSERT.assertEqual(serialization_module._safe_filename(value), expected)
 
 
 def test_superscript_device_names_get_safe_resolved_artifact_filenames(
@@ -2855,14 +3035,20 @@ def test_superscript_device_names_get_safe_resolved_artifact_filenames(
         ],
     )
 
-    assert [path.resolve().name for path in artifacts.node_data] == [
-        "_COM¹.results.json",
-        "_lPt³.data.json",
-    ]
-    assert [_read_json(path)["main"]["name"] for path in artifacts.node_data] == [
-        "COM¹.results",
-        "lPt³.data",
-    ]
+    _ASSERT.assertEqual(
+        [path.resolve().name for path in artifacts.node_data],
+        [
+            "_COM¹.results.json",
+            "_lPt³.data.json",
+        ],
+    )
+    _ASSERT.assertEqual(
+        [_read_json(path)["main"]["name"] for path in artifacts.node_data],
+        [
+            "COM¹.results",
+            "lPt³.data",
+        ],
+    )
 
 
 def test_safe_filename_truncates_at_a_multibyte_utf8_boundary() -> None:
@@ -2876,10 +3062,10 @@ def test_safe_filename_truncates_at_a_multibyte_utf8_boundary() -> None:
     safe = serialization_module._safe_filename(value)
     encoded = safe.encode("utf-8")
 
-    assert safe.startswith("a" * (prefix_budget - 1) + "--")
-    assert "😀" not in safe
-    assert encoded.decode("utf-8") == safe
-    assert len(encoded) <= serialization_module._MAX_FILENAME_STEM_BYTES
+    _ASSERT.assertTrue(safe.startswith("a" * (prefix_budget - 1) + "--"))
+    _ASSERT.assertNotIn("😀", safe)
+    _ASSERT.assertEqual(encoded.decode("utf-8"), safe)
+    _ASSERT.assertLessEqual(len(encoded), serialization_module._MAX_FILENAME_STEM_BYTES)
 
 
 def test_filename_collision_suffix_is_allocated_near_the_byte_limit(
@@ -2899,12 +3085,13 @@ def test_filename_collision_suffix_is_allocated_near_the_byte_limit(
     first = serialization_module._allocate_safe_filename(value, allocated)
     second = serialization_module._allocate_safe_filename(value, allocated)
 
-    assert first == value
-    assert second == f"{'x' * (max_stem_bytes - len(' (2)'))} (2)"
-    assert len(f"{second}{extension}".encode("utf-8")) == (
-        serialization_module._MAX_FILENAME_COMPONENT_BYTES
+    _ASSERT.assertEqual(first, value)
+    _ASSERT.assertEqual(second, f"{'x' * (max_stem_bytes - len(' (2)'))} (2)")
+    _ASSERT.assertEqual(
+        len(f"{second}{extension}".encode("utf-8")),
+        serialization_module._MAX_FILENAME_COMPONENT_BYTES,
     )
-    assert allocated == {first.casefold(), second.casefold()}
+    _ASSERT.assertEqual(allocated, {first.casefold(), second.casefold()})
 
 
 def test_malformed_metric_qualifiers_skip_only_that_metric(
@@ -2937,8 +3124,14 @@ def test_malformed_metric_qualifiers_skip_only_that_metric(
         ],
     )
 
-    assert [path.name for path in artifacts.node_data] == ["cycles [engine=cpu].json"]
-    assert _read_json(artifacts.node_data[0])["main"]["results"] == {"0": {"value": 10}}
+    _ASSERT.assertEqual(
+        [path.name for path in artifacts.node_data],
+        ["cycles [engine=cpu].json"],
+    )
+    _ASSERT.assertEqual(
+        _read_json(artifacts.node_data[0])["main"]["results"],
+        {"0": {"value": 10}},
+    )
 
 
 def test_malformed_breakdown_qualifiers_skip_only_that_breakdown(
@@ -2963,8 +3156,14 @@ def test_malformed_breakdown_qualifiers_skip_only_that_breakdown(
         ],
     )
 
-    assert [path.name for path in artifacts.node_data] == ["cycles [phase=warm].json"]
-    assert _read_json(artifacts.node_data[0])["main"]["results"] == {"0": {"value": 10}}
+    _ASSERT.assertEqual(
+        [path.name for path in artifacts.node_data],
+        ["cycles [phase=warm].json"],
+    )
+    _ASSERT.assertEqual(
+        _read_json(artifacts.node_data[0])["main"]["results"],
+        {"0": {"value": 10}},
+    )
 
 
 def test_nonfinite_metric_qualifiers_are_rejected_at_artifact_boundary(
@@ -3014,17 +3213,20 @@ def test_nonobject_metric_qualifiers_are_skipped(
         ],
     )
 
-    assert [path.name for path in artifacts.node_data] == ["cycles.json"]
-    assert _read_json(artifacts.node_data[0])["main"] == {
-        "name": "cycles",
-        "results": {"0": {"value": 3}},
-        "showExpandedSummaryOnGroupNode": True,
-        "showLabelCountColumnsInChildrenStatsTable": True,
-        "gradient": [
-            {"stop": 0, "bgColor": "#2e7d32"},
-            {"stop": 1, "bgColor": "#c62828"},
-        ],
-    }
+    _ASSERT.assertEqual([path.name for path in artifacts.node_data], ["cycles.json"])
+    _ASSERT.assertEqual(
+        _read_json(artifacts.node_data[0])["main"],
+        {
+            "name": "cycles",
+            "results": {"0": {"value": 3}},
+            "showExpandedSummaryOnGroupNode": True,
+            "showLabelCountColumnsInChildrenStatsTable": True,
+            "gradient": [
+                {"stop": 0, "bgColor": "#2e7d32"},
+                {"stop": 1, "bgColor": "#c62828"},
+            ],
+        },
+    )
 
 
 def test_overlay_display_name_collisions_still_use_category_and_result_identity() -> (
@@ -3049,12 +3251,15 @@ def test_overlay_display_name_collisions_still_use_category_and_result_identity(
         key=node_data_module._overlay_sort_key,
     )
 
-    assert node_data_module._overlay_display_names(keys) == {
-        status: "status",
-        status_metric: "status [metric]",
-        performance_latency: "latency",
-        optimization_latency: "latency [optimization]",
-    }
+    _ASSERT.assertEqual(
+        node_data_module._overlay_display_names(keys),
+        {
+            status: "status",
+            status_metric: "status [metric]",
+            performance_latency: "latency",
+            optimization_latency: "latency [optimization]",
+        },
+    )
 
 
 def test_write_artifacts_disambiguates_normalized_node_data_filenames(
@@ -3100,32 +3305,41 @@ def test_write_artifacts_disambiguates_normalized_node_data_filenames(
         _run_result(tmp_path, output=output, model_name="model.tflite")
     )
 
-    assert [path.name for path in artifacts.node_data] == [
-        "latency-read (ticks).json",
-        "latency-read (ticks) (2).json",
-    ]
+    _ASSERT.assertEqual(
+        [path.name for path in artifacts.node_data],
+        [
+            "latency-read (ticks).json",
+            "latency-read (ticks) (2).json",
+        ],
+    )
     first = _read_json(artifacts.node_data[0])
     second = _read_json(artifacts.node_data[1])
-    assert first["main"] == {
-        "name": "latency/read (ticks)",
-        "results": {"0": {"value": 1}},
-        "showExpandedSummaryOnGroupNode": True,
-        "showLabelCountColumnsInChildrenStatsTable": True,
-        "gradient": [
-            {"stop": 0, "bgColor": "#2e7d32"},
-            {"stop": 1, "bgColor": "#c62828"},
-        ],
-    }
-    assert second["main"] == {
-        "name": "latency:read (ticks)",
-        "results": {"0": {"value": 2}},
-        "showExpandedSummaryOnGroupNode": True,
-        "showLabelCountColumnsInChildrenStatsTable": True,
-        "gradient": [
-            {"stop": 0, "bgColor": "#2e7d32"},
-            {"stop": 1, "bgColor": "#c62828"},
-        ],
-    }
+    _ASSERT.assertEqual(
+        first["main"],
+        {
+            "name": "latency/read (ticks)",
+            "results": {"0": {"value": 1}},
+            "showExpandedSummaryOnGroupNode": True,
+            "showLabelCountColumnsInChildrenStatsTable": True,
+            "gradient": [
+                {"stop": 0, "bgColor": "#2e7d32"},
+                {"stop": 1, "bgColor": "#c62828"},
+            ],
+        },
+    )
+    _ASSERT.assertEqual(
+        second["main"],
+        {
+            "name": "latency:read (ticks)",
+            "results": {"0": {"value": 2}},
+            "showExpandedSummaryOnGroupNode": True,
+            "showLabelCountColumnsInChildrenStatsTable": True,
+            "gradient": [
+                {"stop": 0, "bgColor": "#2e7d32"},
+                {"stop": 1, "bgColor": "#c62828"},
+            ],
+        },
+    )
 
 
 @pytest.mark.parametrize(
@@ -3187,7 +3401,7 @@ def test_plugin_run_files_writes_bundle_without_opening(
     plugin.run(_run_result(tmp_path, mode="files", model_exists=False))
 
     build_bundle.assert_called_once()
-    assert build_bundle.call_args.args[0].name == "model-explorer"
+    _ASSERT.assertEqual(build_bundle.call_args.args[0].name, "model-explorer")
     open_bundle.assert_not_called()
 
 
@@ -3210,7 +3424,7 @@ def test_plugin_run_open_mode_opens_standalone_html(
 
     build_bundle.assert_not_called()
     open_bundle.assert_called_once()
-    assert open_bundle.call_args.args[0].name == "model-explorer"
+    _ASSERT.assertEqual(open_bundle.call_args.args[0].name, "model-explorer")
 
 
 def test_plugin_rejects_model_format_without_adapter(
@@ -3254,41 +3468,53 @@ def test_build_artifacts_bundle_writes_standalone_html(
     index = build_artifacts_bundle(artifacts.root)
 
     bundle = artifacts.root / "bundle"
-    assert index == bundle / "index.html"
-    assert index.exists()
-    assert [path.name for path in bundle.iterdir()] == ["index.html"]
+    _ASSERT.assertEqual(index, bundle / "index.html")
+    _ASSERT.assertTrue(index.exists())
+    _ASSERT.assertEqual([path.name for path in bundle.iterdir()], ["index.html"])
     html = index.read_text(encoding="utf-8")
-    assert "<title>model.tflite - MLIA Model Explorer</title>" in html
-    assert "const embeddedAssets =" in html
-    assert "modelExplorer.createWorker" in html
-    assert "document.createElement('model-explorer-visualizer')" in html
-    assert 'id="message"' not in html
-    assert 'id="left-graph-select"' in html
-    assert 'id="add-pane-button"' in html
-    assert 'id="right-graph-select"' in html
+    _ASSERT.assertIn("<title>model.tflite - MLIA Model Explorer</title>", html)
+    _ASSERT.assertIn("const embeddedAssets =", html)
+    _ASSERT.assertIn("modelExplorer.createWorker", html)
+    _ASSERT.assertIn("document.createElement('model-explorer-visualizer')", html)
+    _ASSERT.assertNotIn('id="message"', html)
+    _ASSERT.assertIn('id="left-graph-select"', html)
+    _ASSERT.assertIn('id="add-pane-button"', html)
+    _ASSERT.assertIn('id="right-graph-select"', html)
     data = _read_bundle_data(index)
-    assert data["graphCollections"][0]["label"] == "Source Model"
+    _ASSERT.assertEqual(data["graphCollections"][0]["label"], "Source Model")
     runs = data["nodeDataProviderRuns"]
-    assert [run["name"] for run in runs] == ["placement", "checks", "advice"]
-    assert [run["collectionLabel"] for run in runs] == [
-        "Source Model",
-        "Source Model",
-        "Source Model",
-    ]
-    assert all(set(run) == {"collectionLabel", "name", "data"} for run in runs)
-    assert all(set(run["data"]) == {"main"} for run in runs)
-    assert "nodeData" not in data
-    assert data["hostContractVersion"] == 1
-    assert data["visualizerConfig"]["hideTitleBar"] is True
-    assert data["visualizerConfig"]["hideLegends"] is True
-    assert data["visualizerConfig"]["keepLayersWithASingleChild"] is True
-    assert (
-        data["visualizerConfig"]["artificialLayerNodeCountThreshold"] == 1_000_000_000
+    _ASSERT.assertEqual(
+        [run["name"] for run in runs],
+        ["placement", "checks", "advice"],
     )
-    assert data["visualizerConfig"]["syncNavigationData"] == {
-        "type": "sync_navigation",
-        "graphMappings": [],
-    }
+    _ASSERT.assertEqual(
+        [run["collectionLabel"] for run in runs],
+        [
+            "Source Model",
+            "Source Model",
+            "Source Model",
+        ],
+    )
+    _ASSERT.assertTrue(
+        all(set(run) == {"collectionLabel", "name", "data"} for run in runs),
+    )
+    _ASSERT.assertTrue(all(set(run["data"]) == {"main"} for run in runs))
+    _ASSERT.assertNotIn("nodeData", data)
+    _ASSERT.assertEqual(data["hostContractVersion"], 1)
+    _ASSERT.assertIs(data["visualizerConfig"]["hideTitleBar"], True)
+    _ASSERT.assertIs(data["visualizerConfig"]["hideLegends"], True)
+    _ASSERT.assertIs(data["visualizerConfig"]["keepLayersWithASingleChild"], True)
+    _ASSERT.assertEqual(
+        data["visualizerConfig"]["artificialLayerNodeCountThreshold"],
+        1_000_000_000,
+    )
+    _ASSERT.assertEqual(
+        data["visualizerConfig"]["syncNavigationData"],
+        {
+            "type": "sync_navigation",
+            "graphMappings": [],
+        },
+    )
 
 
 def test_bundle_host_installs_inputs_and_controls_graph_selectors() -> None:
@@ -3432,36 +3658,48 @@ queueMicrotask(() => {{
     )
     result = json.loads(completed.stdout)
 
-    assert result["operations"] == [
-        {"type": "create"},
-        {"type": "set", "property": "graphCollections"},
-        {"type": "set", "property": "config"},
-        {"type": "set", "property": "nodeDataProviderRuns"},
-        {"type": "set", "property": "selectedNodeData"},
-        {"type": "set", "property": "syncNodeDataOverlaySelection"},
-        {"type": "set", "property": "initialUiState"},
-        {"type": "append"},
-    ]
-    assert result["leftOptions"] == [
-        "First / main",
-        "First / alternate",
-        "Second",
-    ]
-    assert result["selectGraphCalls"] == [
-        ["main", "First", 1],
-        ["main", "Second", 0],
-    ]
-    assert result["leftValue"] == "1"
-    assert result["rightValue"] == "2"
-    assert result["rightHidden"] is False
-    assert result["addPaneInitiallyVisible"] is True
-    assert result["addPaneInitiallyEnabled"] is True
-    assert result["addPaneHidden"] is True
-    assert result["addPaneDisabled"] is True
-    assert result["toolbarColumns"] == "35% 65%"
-    assert result["visualizer"]["nodeDataProviderRuns"] == data["nodeDataProviderRuns"]
-    assert result["visualizer"]["syncNodeDataOverlaySelection"] is True
-    assert "modelGraphProcessed" not in result["visualizer"]
+    _ASSERT.assertEqual(
+        result["operations"],
+        [
+            {"type": "create"},
+            {"type": "set", "property": "graphCollections"},
+            {"type": "set", "property": "config"},
+            {"type": "set", "property": "nodeDataProviderRuns"},
+            {"type": "set", "property": "selectedNodeData"},
+            {"type": "set", "property": "syncNodeDataOverlaySelection"},
+            {"type": "set", "property": "initialUiState"},
+            {"type": "append"},
+        ],
+    )
+    _ASSERT.assertEqual(
+        result["leftOptions"],
+        [
+            "First / main",
+            "First / alternate",
+            "Second",
+        ],
+    )
+    _ASSERT.assertEqual(
+        result["selectGraphCalls"],
+        [
+            ["main", "First", 1],
+            ["main", "Second", 0],
+        ],
+    )
+    _ASSERT.assertEqual(result["leftValue"], "1")
+    _ASSERT.assertEqual(result["rightValue"], "2")
+    _ASSERT.assertIs(result["rightHidden"], False)
+    _ASSERT.assertIs(result["addPaneInitiallyVisible"], True)
+    _ASSERT.assertIs(result["addPaneInitiallyEnabled"], True)
+    _ASSERT.assertIs(result["addPaneHidden"], True)
+    _ASSERT.assertIs(result["addPaneDisabled"], True)
+    _ASSERT.assertEqual(result["toolbarColumns"], "35% 65%")
+    _ASSERT.assertEqual(
+        result["visualizer"]["nodeDataProviderRuns"],
+        data["nodeDataProviderRuns"],
+    )
+    _ASSERT.assertIs(result["visualizer"]["syncNodeDataOverlaySelection"], True)
+    _ASSERT.assertNotIn("modelGraphProcessed", result["visualizer"])
 
 
 def test_build_artifacts_bundle_escapes_model_name_in_page_title(
@@ -3487,7 +3725,10 @@ def test_build_artifacts_bundle_escapes_model_name_in_page_title(
     index = build_artifacts_bundle(artifacts.root)
 
     html = index.read_text(encoding="utf-8")
-    assert "<title>model&lt;&amp;&gt;.bin - MLIA Model Explorer</title>" in html
+    _ASSERT.assertIn(
+        "<title>model&lt;&amp;&gt;.bin - MLIA Model Explorer</title>",
+        html,
+    )
 
 
 def test_build_artifacts_bundle_opens_source_and_overlay_rich_entity_graph_side_by_side(
@@ -3547,34 +3788,43 @@ def test_build_artifacts_bundle_opens_source_and_overlay_rich_entity_graph_side_
     index = build_artifacts_bundle(artifacts.root)
 
     data = _read_bundle_data(index)
-    assert [collection["label"] for collection in data["graphCollections"]] == [
-        "Source Model",
-        "nn_module",
-        "segment_cascade_chain",
-    ]
-    assert data["initialUiState"] == {
-        "paneStates": [
-            {
-                "deepestExpandedGroupNodeIds": [],
-                "selectedNodeId": "",
-                "selectedGraphId": "Main",
-                "selectedCollectionLabel": "Source Model",
-                "widthFraction": 0.5,
-            },
-            {
-                "deepestExpandedGroupNodeIds": [],
-                "selectedNodeId": "",
-                "selectedGraphId": "nn_module-Main",
-                "selectedCollectionLabel": "nn_module",
-                "widthFraction": 0.5,
-                "selected": True,
-            },
-        ]
-    }
-    assert data["selectedNodeData"] == [
-        {"modelName": "nn_module", "name": "total_cycles"},
-        {"modelName": "segment_cascade_chain", "name": "total_cycles"},
-    ]
+    _ASSERT.assertEqual(
+        [collection["label"] for collection in data["graphCollections"]],
+        [
+            "Source Model",
+            "nn_module",
+            "segment_cascade_chain",
+        ],
+    )
+    _ASSERT.assertEqual(
+        data["initialUiState"],
+        {
+            "paneStates": [
+                {
+                    "deepestExpandedGroupNodeIds": [],
+                    "selectedNodeId": "",
+                    "selectedGraphId": "Main",
+                    "selectedCollectionLabel": "Source Model",
+                    "widthFraction": 0.5,
+                },
+                {
+                    "deepestExpandedGroupNodeIds": [],
+                    "selectedNodeId": "",
+                    "selectedGraphId": "nn_module-Main",
+                    "selectedCollectionLabel": "nn_module",
+                    "widthFraction": 0.5,
+                    "selected": True,
+                },
+            ]
+        },
+    )
+    _ASSERT.assertEqual(
+        data["selectedNodeData"],
+        [
+            {"modelName": "nn_module", "name": "total_cycles"},
+            {"modelName": "segment_cascade_chain", "name": "total_cycles"},
+        ],
+    )
 
 
 def test_build_artifacts_bundle_falls_back_to_op_cycles_selected_node_data(
@@ -3622,10 +3872,13 @@ def test_build_artifacts_bundle_falls_back_to_op_cycles_selected_node_data(
     index = build_artifacts_bundle(artifacts.root)
 
     data = _read_bundle_data(index)
-    assert data["selectedNodeData"] == [
-        {"modelName": "Source Model", "name": "op_cycles"},
-        {"modelName": "segment_cascade_chain", "name": "op_cycles"},
-    ]
+    _ASSERT.assertEqual(
+        data["selectedNodeData"],
+        [
+            {"modelName": "Source Model", "name": "op_cycles"},
+            {"modelName": "segment_cascade_chain", "name": "op_cycles"},
+        ],
+    )
 
 
 def test_build_artifacts_bundle_skips_selected_node_data_without_default_overlays(
@@ -3673,7 +3926,7 @@ def test_build_artifacts_bundle_skips_selected_node_data_without_default_overlay
     index = build_artifacts_bundle(artifacts.root)
 
     data = _read_bundle_data(index)
-    assert data["selectedNodeData"] == []
+    _ASSERT.assertEqual(data["selectedNodeData"], [])
 
 
 def test_write_artifacts_emits_one_graph_per_declared_entity_kind_hierarchy(
@@ -3716,17 +3969,23 @@ def test_write_artifacts_emits_one_graph_per_declared_entity_kind_hierarchy(
         _run_result(tmp_path, output=output, model_name="model.vgf")
     )
 
-    assert [path.name for path in artifacts.generated_models] == [
-        "model-hierarchy-nn_module.json",
-        "model-hierarchy-segment_cascade_chain.json",
-    ]
+    _ASSERT.assertEqual(
+        [path.name for path in artifacts.generated_models],
+        [
+            "model-hierarchy-nn_module.json",
+            "model-hierarchy-segment_cascade_chain.json",
+        ],
+    )
     nn_module_model = _read_json(
         artifacts.root / "models" / "model-hierarchy-nn_module.json"
     )
-    assert nn_module_model["label"] == "nn_module"
-    assert nn_module_model["graphs"][0]["id"] == "nn_module-Main"
-    assert nn_module_model["graphs"][0]["nodes"][0]["namespace"] == ""
-    assert nn_module_model["graphs"][0]["nodes"][1]["namespace"] == "module 0"
+    _ASSERT.assertEqual(nn_module_model["label"], "nn_module")
+    _ASSERT.assertEqual(nn_module_model["graphs"][0]["id"], "nn_module-Main")
+    _ASSERT.assertEqual(nn_module_model["graphs"][0]["nodes"][0]["namespace"], "")
+    _ASSERT.assertEqual(
+        nn_module_model["graphs"][0]["nodes"][1]["namespace"],
+        "module 0",
+    )
 
 
 def test_write_artifacts_renders_supplied_code_stack_without_second_transformation(
@@ -3768,8 +4027,8 @@ def test_write_artifacts_renders_supplied_code_stack_without_second_transformati
         artifacts.root / "models" / "model-hierarchy-code_stack.json"
     )
     namespaces = [node["namespace"] for node in code_stack_model["graphs"][0]["nodes"]]
-    assert "model.py:10" in namespaces
-    assert _read_json(artifacts.standardized_output) == output
+    _ASSERT.assertIn("model.py:10", namespaces)
+    _ASSERT.assertEqual(_read_json(artifacts.standardized_output), output)
 
 
 def test_write_artifacts_targets_namespace_overlays_to_matching_graph_collections(
@@ -3819,22 +4078,27 @@ def test_write_artifacts_targets_namespace_overlays_to_matching_graph_collection
         / "model-hierarchy-segment_cascade_chain"
         / "latency (cycles).json"
     )
-    assert metric_overlay["segment_cascade_chain-Main"]["results"] == {
-        "chain 0": {"value": 10}
-    }
+    _ASSERT.assertEqual(
+        metric_overlay["segment_cascade_chain-Main"]["results"],
+        {"chain 0": {"value": 10}},
+    )
     manifest = _read_json(artifacts.manifest)
-    assert manifest["node_data"] == [
-        {
-            "path": "node-data/model-source/latency (cycles).json",
-            "graph_collection_label": "Source Model",
-        },
-        {
-            "path": (
-                "node-data/model-hierarchy-segment_cascade_chain/latency (cycles).json"
-            ),
-            "graph_collection_label": "segment_cascade_chain",
-        },
-    ]
+    _ASSERT.assertEqual(
+        manifest["node_data"],
+        [
+            {
+                "path": "node-data/model-source/latency (cycles).json",
+                "graph_collection_label": "Source Model",
+            },
+            {
+                "path": (
+                    "node-data/model-hierarchy-segment_cascade_chain/"
+                    "latency (cycles).json"
+                ),
+                "graph_collection_label": "segment_cascade_chain",
+            },
+        ],
+    )
 
 
 def test_write_artifacts_omits_node_data_with_no_matching_graph_collection(
@@ -3872,9 +4136,11 @@ def test_write_artifacts_omits_node_data_with_no_matching_graph_collection(
         _run_result(tmp_path, output=output, model_name="model.vgf")
     )
 
-    assert artifacts.node_data == []
-    assert _read_json(artifacts.manifest)["node_data"] == []
-    assert not (artifacts.root / "node-data" / "model-source" / "status.json").exists()
+    _ASSERT.assertEqual(artifacts.node_data, [])
+    _ASSERT.assertEqual(_read_json(artifacts.manifest)["node_data"], [])
+    _ASSERT.assertFalse(
+        (artifacts.root / "node-data" / "model-source" / "status.json").exists(),
+    )
 
 
 def test_write_artifacts_targets_one_overlay_to_multiple_graph_collections(
@@ -3913,13 +4179,16 @@ def test_write_artifacts_targets_one_overlay_to_multiple_graph_collections(
         _run_result(tmp_path, output=output, model_name="model.vgf")
     )
 
-    assert artifacts.node_data == [
-        artifacts.root / "node-data" / "model-source" / "status.json",
-        artifacts.root
-        / "node-data"
-        / "model-hierarchy-segment_cascade_chain"
-        / "status.json",
-    ]
+    _ASSERT.assertEqual(
+        artifacts.node_data,
+        [
+            artifacts.root / "node-data" / "model-source" / "status.json",
+            artifacts.root
+            / "node-data"
+            / "model-hierarchy-segment_cascade_chain"
+            / "status.json",
+        ],
+    )
     source_status = _read_json(
         artifacts.root / "node-data" / "model-source" / "status.json"
     )
@@ -3929,37 +4198,47 @@ def test_write_artifacts_targets_one_overlay_to_multiple_graph_collections(
         / "model-hierarchy-segment_cascade_chain"
         / "status.json"
     )
-    assert set(source_status) == {"Main"}
-    assert set(generated_status) == {"segment_cascade_chain-Main"}
-    assert source_status["Main"]["results"] == {"0__op_0": {"value": "estimated"}}
-    assert generated_status["segment_cascade_chain-Main"]["results"] == {
-        "0__op_0": {"value": "estimated"}
-    }
+    _ASSERT.assertEqual(set(source_status), {"Main"})
+    _ASSERT.assertEqual(set(generated_status), {"segment_cascade_chain-Main"})
+    _ASSERT.assertEqual(
+        source_status["Main"]["results"],
+        {"0__op_0": {"value": "estimated"}},
+    )
+    _ASSERT.assertEqual(
+        generated_status["segment_cascade_chain-Main"]["results"],
+        {"0__op_0": {"value": "estimated"}},
+    )
     manifest = _read_json(artifacts.manifest)
-    assert manifest["node_data"] == [
-        {
-            "path": "node-data/model-source/status.json",
-            "graph_collection_label": "Source Model",
-        },
-        {
-            "path": "node-data/model-hierarchy-segment_cascade_chain/status.json",
-            "graph_collection_label": "segment_cascade_chain",
-        },
-    ]
-    assert manifest["nodeDataOverlayKeysAndDisplayNames"] == [
-        {
-            "overlayKey": {
-                "resultIndex": 0,
-                "resultKind": "performance",
-                "category": "status",
-                "name": "status",
-                "unit": "",
-                "breakdownQualifiers": {},
-                "metricQualifiers": {},
+    _ASSERT.assertEqual(
+        manifest["node_data"],
+        [
+            {
+                "path": "node-data/model-source/status.json",
+                "graph_collection_label": "Source Model",
             },
-            "displayName": "status",
-        }
-    ]
+            {
+                "path": "node-data/model-hierarchy-segment_cascade_chain/status.json",
+                "graph_collection_label": "segment_cascade_chain",
+            },
+        ],
+    )
+    _ASSERT.assertEqual(
+        manifest["nodeDataOverlayKeysAndDisplayNames"],
+        [
+            {
+                "overlayKey": {
+                    "resultIndex": 0,
+                    "resultKind": "performance",
+                    "category": "status",
+                    "name": "status",
+                    "unit": "",
+                    "breakdownQualifiers": {},
+                    "metricQualifiers": {},
+                },
+                "displayName": "status",
+            }
+        ],
+    )
 
 
 def test_open_artifacts_bundle_opens_file_url(tmp_path: Path, monkeypatch) -> None:
@@ -3976,8 +4255,8 @@ def test_open_artifacts_bundle_opens_file_url(tmp_path: Path, monkeypatch) -> No
 
     index = open_artifacts_bundle(artifacts.root)
 
-    assert index == artifacts.root / "bundle" / "index.html"
-    assert opened_urls == [index.resolve().as_uri()]
+    _ASSERT.assertEqual(index, artifacts.root / "bundle" / "index.html")
+    _ASSERT.assertEqual(opened_urls, [index.resolve().as_uri()])
 
 
 def test_write_artifacts_runs_adapter_and_writes_source_graph_json(
@@ -3995,11 +4274,11 @@ def test_write_artifacts_runs_adapter_and_writes_source_graph_json(
     source_model = _read_json(artifacts.root / "models" / "model-source.json")
     expected = _FakeAdapter().convert(str(tmp_path / "model.vgf"), {})
     expected["label"] = "Source Model"
-    assert source_model == expected
+    _ASSERT.assertEqual(source_model, expected)
     manifest = _read_json(artifacts.manifest)
-    assert manifest["model_path"] == "models/model-source.json"
-    assert manifest.get("model_paths") is None
-    assert not (artifacts.root / "models" / "model.tflite").exists()
+    _ASSERT.assertEqual(manifest["model_path"], "models/model-source.json")
+    _ASSERT.assertIs(manifest.get("model_paths"), None)
+    _ASSERT.assertFalse((artifacts.root / "models" / "model.tflite").exists())
 
 
 def test_write_artifacts_runs_onnx_adapter(
@@ -4062,7 +4341,7 @@ def test_write_artifacts_runs_onnx_adapter(
 
     import_module.assert_called_once_with("model_explorer_onnx.main")
     source_graph = _read_json(generated.root / "models" / "model-source.json")
-    assert source_graph["graphs"][0]["nodes"][0]["id"] == "adapter_node"
+    _ASSERT.assertEqual(source_graph["graphs"][0]["nodes"][0]["id"], "adapter_node")
 
 
 def test_write_artifacts_overwrites_single_adapter_graph_collection_label(
@@ -4080,10 +4359,10 @@ def test_write_artifacts_overwrites_single_adapter_graph_collection_label(
     artifacts = write_artifacts(_run_result(tmp_path, model_name="model.vgf"))
 
     source_model = _read_json(artifacts.root / "models" / "model-source.json")
-    assert source_model["label"] == "Source Model"
-    assert source_model["graphs"][0]["nodes"][0]["id"] == "0"
+    _ASSERT.assertEqual(source_model["label"], "Source Model")
+    _ASSERT.assertEqual(source_model["graphs"][0]["nodes"][0]["id"], "0")
     manifest = _read_json(artifacts.manifest)
-    assert manifest["node_data"] == []
+    _ASSERT.assertEqual(manifest["node_data"], [])
 
 
 def test_write_artifacts_rejects_multiple_adapter_graph_collections(
@@ -4101,10 +4380,11 @@ def test_write_artifacts_rejects_multiple_adapter_graph_collections(
     with pytest.raises(RuntimeError) as err:
         write_artifacts(_run_result(tmp_path, model_name="model.vgf"))
 
-    assert str(err.value) == (
+    _ASSERT.assertEqual(
+        str(err.value),
         "Model Explorer adapter returned multiple graph collections; "
         "mlia-model-explorer currently requires exactly one. "
-        "Returned collections: Left Adapter Label, Right Adapter Label."
+        "Returned collections: Left Adapter Label, Right Adapter Label.",
     )
 
 
@@ -4123,11 +4403,11 @@ def test_write_artifacts_runs_builtin_tflite_adapter(
         "model_explorer.builtin_tflite_flatbuffer_adapter"
     )
     source_model = _read_json(artifacts.root / "models" / "model-source.json")
-    assert source_model["label"] == "Source Model"
-    assert source_model["graphs"][0]["nodes"][0]["id"] == "0"
+    _ASSERT.assertEqual(source_model["label"], "Source Model")
+    _ASSERT.assertEqual(source_model["graphs"][0]["nodes"][0]["id"], "0")
     manifest = _read_json(artifacts.manifest)
-    assert manifest["model_path"] == "models/model-source.json"
-    assert not (artifacts.root / "models" / "model.tflite").exists()
+    _ASSERT.assertEqual(manifest["model_path"], "models/model-source.json")
+    _ASSERT.assertFalse((artifacts.root / "models" / "model.tflite").exists())
 
 
 def test_build_artifacts_bundle_uses_generated_graph_json_files(
@@ -4146,9 +4426,10 @@ def test_build_artifacts_bundle_uses_generated_graph_json_files(
     index = build_artifacts_bundle(artifacts.root)
 
     data = _read_bundle_data(index)
-    assert data["graphCollections"] == [
-        _read_json(artifacts.root / "models" / "model-source.json")
-    ]
+    _ASSERT.assertEqual(
+        data["graphCollections"],
+        [_read_json(artifacts.root / "models" / "model-source.json")],
+    )
 
 
 def test_write_artifacts_reports_missing_required_adapter(
@@ -4168,9 +4449,9 @@ def test_write_artifacts_reports_missing_required_adapter(
         write_artifacts(_run_result(tmp_path, model_name="model.vgf"))
 
     message = str(err.value)
-    assert "vgf_adapter_model_explorer.main" in message
-    assert "mlia-model-explorer[vgf]" in message
-    assert "vgf-adapter-model-explorer" in message
+    _ASSERT.assertIn("vgf_adapter_model_explorer.main", message)
+    _ASSERT.assertIn("mlia-model-explorer[vgf]", message)
+    _ASSERT.assertIn("vgf-adapter-model-explorer", message)
 
 
 def test_write_artifacts_maps_vgf_spirv_source_locations_to_stable_node_ids(
@@ -4219,7 +4500,10 @@ def test_write_artifacts_maps_vgf_spirv_source_locations_to_stable_node_ids(
     op_cycles = _read_json(
         artifacts.root / "node-data" / "model-source" / "op_cycles.json"
     )
-    assert op_cycles["Main"]["results"] == {
-        "0__op_60": {"value": 123},
-        "graph_segment_0___group___": {"value": 123},
-    }
+    _ASSERT.assertEqual(
+        op_cycles["Main"]["results"],
+        {
+            "0__op_60": {"value": 123},
+            "graph_segment_0___group___": {"value": 123},
+        },
+    )

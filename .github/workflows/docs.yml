@@ -34,6 +34,13 @@ on:
         type: string
         default: built-wheel
   workflow_call:
+    secrets:
+      VAULT_URL:
+        required: false
+      VAULT_ROLE_ID:
+        required: false
+      VAULT_SECRET_ID:
+        required: false
     inputs:
       publish:
         description: Publish documentation for the release wheel artifact
@@ -56,6 +63,9 @@ on:
         type: string
         default: built-wheel
 
+permissions:
+  contents: read
+
 env:
   PYTHON_VERSION: '3.12'
 
@@ -66,11 +76,6 @@ env:
   UV_TOOL_DIR: ${{ github.workspace }}/.uv-tools-ci-${{ github.run_id }}-${{ github.run_attempt }}
   UV_TOOL_BIN_DIR: ${{ github.workspace }}/.uv-bin-ci-${{ github.run_id }}-${{ github.run_attempt }}
 
-  VAULT_COMMON_CI_SECRETS: &vault-common-ci-secrets |
-    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
-    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | INTERNAL_PYPI_USERNAME ;
-    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_PASSWORD | INTERNAL_PYPI_PASSWORD ;
-    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} MLIA_DOCS_ARTIFACTORY_URL | MLIA_DOCS_ARTIFACTORY_URL
 
 jobs:
   build-docs:
@@ -79,20 +84,26 @@ jobs:
     steps:
       - name: Import secrets from Vault
         if: ${{ inputs.publish && github.repository_owner != 'arm' }}
-        uses: hashicorp/vault-action@v4
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4
         with:
           url: ${{ secrets.VAULT_URL }}
           method: approle
           roleId: ${{ secrets.VAULT_ROLE_ID }}
           secretId: ${{ secrets.VAULT_SECRET_ID }}
           namespace: iac-expkits/prod
-          secrets: *vault-common-ci-secrets
-      - uses: actions/checkout@v5
+          secrets: |
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | INTERNAL_PYPI_USERNAME ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_PASSWORD | INTERNAL_PYPI_PASSWORD ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} MLIA_DOCS_ARTIFACTORY_URL | MLIA_DOCS_ARTIFACTORY_URL
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
+          persist-credentials: false
           ref: ${{ inputs.source-ref || github.ref }}
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
+          enable-cache: false
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Build docs
         run: >-
@@ -102,14 +113,14 @@ jobs:
           --with 'pymdown-extensions>=10.0,<11.0'
           mkdocs build --strict --no-directory-urls
       - name: Upload docs artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: docs-site-mlia-model-explorer
           path: .mkdocs/site/
           if-no-files-found: error
       - name: Download release wheel
         if: ${{ inputs.publish && github.repository_owner != 'arm' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ inputs.wheel-artifact }}
           path: release-wheel

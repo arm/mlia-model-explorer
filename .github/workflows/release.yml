@@ -26,10 +26,6 @@ env:
   UV_TOOL_DIR: ${{ github.workspace }}/.uv-tools-ci-${{ github.run_id }}-${{ github.run_attempt }}
   UV_TOOL_BIN_DIR: ${{ github.workspace }}/.uv-bin-ci-${{ github.run_id }}-${{ github.run_attempt }}
 
-  VAULT_COMMON_CI_SECRETS: &vault-common-ci-secrets |
-    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
-    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | UV_INDEX_INTERNAL_USERNAME ;
-    kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_PASSWORD | UV_INDEX_INTERNAL_PASSWORD
 
 jobs:
   classify_release_ref:
@@ -67,35 +63,40 @@ jobs:
     steps:
       - name: Import secrets from Vault
         if: ${{ github.repository_owner != 'arm' }}
-        uses: hashicorp/vault-action@v4
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4
         with:
           url: ${{ secrets.VAULT_URL }}
           method: approle
           roleId: ${{ secrets.VAULT_ROLE_ID }}
           secretId: ${{ secrets.VAULT_SECRET_ID }}
           namespace: iac-expkits/prod
-          secrets: *vault-common-ci-secrets
-      - uses: actions/checkout@v4
+          secrets: |
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | UV_INDEX_INTERNAL_USERNAME ;
+            kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_PASSWORD | UV_INDEX_INTERNAL_PASSWORD
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Checkout public Model Explorer dependency metadata
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: ${{ env.MODEL_EXPLORER_REPOSITORY }}
           ref: ${{ env.MODEL_EXPLORER_SBOM_COMMIT }}
           path: .ci/model-explorer-public
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
         with:
+          enable-cache: false
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "22"
           package-manager-cache: false
       - name: Set up Chrome
         if: runner.os == 'Linux' && runner.arch == 'X64'
-        uses: browser-actions/setup-chrome@v2
+        uses: browser-actions/setup-chrome@48483d551c22a1fe6154c6a195ccc6d5773dc8c4 # v2
         with:
           chrome-version: stable
       - uses: ./.github/actions/build-wheel
@@ -125,7 +126,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-report
           path: coverage.xml
@@ -170,13 +171,13 @@ jobs:
           python scripts/add-sbom-disclaimer.py \
             sbom/model-explorer-visualizer.cdx.json
       - name: Upload project SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: project-sbom
           path: sbom/*.json
           if-no-files-found: error
       - name: Upload built wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: built-wheel
           path: dist/*
@@ -212,7 +213,7 @@ jobs:
     steps:
       - name: Import secrets from Vault
         if: ${{ github.repository_owner != 'arm' }}
-        uses: hashicorp/vault-action@v4
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4
         with:
           url: ${{ secrets.VAULT_URL }}
           method: approle
@@ -224,11 +225,14 @@ jobs:
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_USERNAME | UV_PUBLISH_USERNAME ;
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_PASSWORD | UV_PUBLISH_PASSWORD
 
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          enable-cache: false
           python-version: ${{ env.PYTHON_VERSION }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: built-wheel
           path: dist
@@ -252,7 +256,10 @@ jobs:
       release-tag: ${{ github.ref_name }}
       source-ref: ${{ github.sha }}
       wheel-artifact: built-wheel
-    secrets: inherit
+    secrets:
+      VAULT_URL: ${{ secrets.VAULT_URL }}
+      VAULT_ROLE_ID: ${{ secrets.VAULT_ROLE_ID }}
+      VAULT_SECRET_ID: ${{ secrets.VAULT_SECRET_ID }}
 
   publish_github_release:
     name: Publish GitHub Release
@@ -282,7 +289,7 @@ jobs:
         with:
           app_id: ${{ secrets.ME_REPO_ACCESS_APP_ID }}
           private_key: ${{ secrets.ME_REPO_ACCESS_PRIVATE_KEY }}
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           token: ${{ github.repository_owner == 'arm' && steps.get_app_token.outputs.token || github.token }}
@@ -297,11 +304,11 @@ jobs:
           OUTPUT: CHANGELOG.md
           GITHUB_TOKEN: ${{ github.repository_owner == 'arm' && steps.get_app_token.outputs.token || github.token }}
           GITHUB_REPO: ${{ github.repository }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: built-wheel
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: project-sbom
           path: sbom
@@ -325,12 +332,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout MLIA Model Explorer
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: true
       - name: Checkout public MLIA Model Explorer
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: arm/mlia-model-explorer
           token: ${{ secrets.ARM_ORG_TOKEN }}
@@ -361,12 +368,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout MLIA Model Explorer
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: true
       - name: Checkout public MLIA Model Explorer
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: arm/mlia-model-explorer
           token: ${{ secrets.ARM_ORG_TOKEN }}

@@ -3,6 +3,7 @@
 """Focused correctness tests for graph-qualified mappings and cyclic closure."""
 
 import json
+import unittest
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,8 @@ from mlia.model_explorer._artifacts import (
     node_data,
     source_mapping,
 )
+
+_ASSERT = unittest.TestCase()
 
 
 def _ref(graph_id: str, node_id: str) -> models._NodeRef:
@@ -41,9 +44,9 @@ def test_result_entity_node_ids_close_cycles_and_self_cycles() -> None:
         {"op-a": [node_a], "op-b": [node_b], "op-c": [node_c]},
     )
 
-    assert resolved["shared"] == [node_a, node_b]
-    assert resolved["cycle"] == resolved["shared"]
-    assert resolved["self"] == [node_c]
+    _ASSERT.assertEqual(resolved["shared"], [node_a, node_b])
+    _ASSERT.assertEqual(resolved["cycle"], resolved["shared"])
+    _ASSERT.assertEqual(resolved["self"], [node_c])
 
 
 def test_tflite_operator_zero_is_distinct_in_each_subgraph() -> None:
@@ -59,10 +62,13 @@ def test_tflite_operator_zero_is_distinct_in_each_subgraph() -> None:
         Path("model.tflite"), graph_collection
     )
 
-    assert mapping == {
-        "source_operator/operator/0": [_ref("main", "0")],
-        "source_operator/subgraph/1/operator/0": [_ref("subgraph_1", "0")],
-    }
+    _ASSERT.assertEqual(
+        mapping,
+        {
+            "source_operator/operator/0": [_ref("main", "0")],
+            "source_operator/subgraph/1/operator/0": [_ref("subgraph_1", "0")],
+        },
+    )
 
 
 def test_collection_scoped_overlay_routes_colliding_node_ids() -> None:
@@ -78,10 +84,10 @@ def test_collection_scoped_overlay_routes_colliding_node_ids() -> None:
 
     data_by_collection = node_data._collection_scoped_node_data("status", raw)
 
-    assert set(data_by_collection) == {"Source Model"}
+    _ASSERT.assertEqual(set(data_by_collection), {"Source Model"})
     graph_data = data_by_collection["Source Model"]
-    assert graph_data["main"]["results"] == {"0": {"value": "primary"}}
-    assert graph_data["subgraph_1"]["results"] == {"0": {"value": "nested"}}
+    _ASSERT.assertEqual(graph_data["main"]["results"], {"0": {"value": "primary"}})
+    _ASSERT.assertEqual(graph_data["subgraph_1"]["results"], {"0": {"value": "nested"}})
 
 
 def test_generated_namespace_refs_target_exact_graphs() -> None:
@@ -109,21 +115,19 @@ def test_generated_namespace_refs_target_exact_graphs() -> None:
 
     refs = node_data._result_entity_namespace_refs([artifact])
 
-    assert refs == {"group": [expected_ref]}
+    _ASSERT.assertEqual(refs, {"group": [expected_ref]})
 
-    overlay_refs = node_data._result_overlay_node_ids(
-        [artifact], {"op": [source_ref]}
-    )
-    assert overlay_refs == {"op": [source_ref, generated_ref]}
+    overlay_refs = node_data._result_overlay_node_ids([artifact], {"op": [source_ref]})
+    _ASSERT.assertEqual(overlay_refs, {"op": [source_ref, generated_ref]})
 
     data_by_collection = node_data._collection_scoped_node_data(
         "cycles", {"results": {expected_ref: {"value": 7}}}
     )
 
-    assert set(data_by_collection) == {"chain"}
+    _ASSERT.assertEqual(set(data_by_collection), {"chain"})
     graph_data = data_by_collection["chain"]
-    assert set(graph_data) == {"chain-main"}
-    assert graph_data["chain-main"]["results"] == {"group": {"value": 7}}
+    _ASSERT.assertEqual(set(graph_data), {"chain-main"})
+    _ASSERT.assertEqual(graph_data["chain-main"]["results"], {"group": {"value": 7}})
 
 
 def test_overlay_identity_distinguishes_metric_from_same_named_field(
@@ -163,18 +167,21 @@ def test_overlay_identity_distinguishes_metric_from_same_named_field(
     )
 
     paths = list(dict.fromkeys(item.path for item in generated))
-    assert [path.name for path in paths] == [
-        "status.json",
-        "status [metric].json",
-    ]
+    _ASSERT.assertEqual(
+        [path.name for path in paths],
+        [
+            "status.json",
+            "status [metric].json",
+        ],
+    )
     field_overlay = json.loads(paths[0].read_text(encoding="utf-8"))
     metric_overlay = json.loads(paths[1].read_text(encoding="utf-8"))
-    assert field_overlay["main"]["name"] == "status"
-    assert field_overlay["main"]["results"] == {"0": {"value": "estimated"}}
-    assert "gradient" not in field_overlay["main"]
-    assert metric_overlay["main"]["name"] == ("status [metric]")
-    assert metric_overlay["main"]["results"] == {"0": {"value": 7}}
-    assert "gradient" in metric_overlay["main"]
+    _ASSERT.assertEqual(field_overlay["main"]["name"], "status")
+    _ASSERT.assertEqual(field_overlay["main"]["results"], {"0": {"value": "estimated"}})
+    _ASSERT.assertNotIn("gradient", field_overlay["main"])
+    _ASSERT.assertEqual(metric_overlay["main"]["name"], "status [metric]")
+    _ASSERT.assertEqual(metric_overlay["main"]["results"], {"0": {"value": 7}})
+    _ASSERT.assertIn("gradient", metric_overlay["main"])
 
 
 def test_mapping_artifact_uses_structured_node_references() -> None:
@@ -199,7 +206,7 @@ def test_mapping_artifact_uses_structured_node_references() -> None:
     )["results"][0]
 
     node = {"collectionLabel": "Source Model", "graphId": "main", "nodeId": "0"}
-    assert mapping["mappings"] == [{"node": node, "entityId": "op"}]
+    _ASSERT.assertEqual(mapping["mappings"], [{"node": node, "entityId": "op"}])
 
 
 def test_source_operator_mapping_rejects_tosa_without_identity_contract() -> None:
@@ -289,10 +296,13 @@ def test_generated_hierarchies_and_metrics_are_result_local() -> None:
 
     generated = graphs._generated_entity_hierarchies(output)
 
-    assert [(item.graph_name, item.collection_label) for item in generated] == [
-        ("cascade_chain-result-1", "cascade_chain [performance result 1]"),
-        ("cascade_chain-result-2", "cascade_chain [memory result 2]"),
-    ]
+    _ASSERT.assertEqual(
+        [(item.graph_name, item.collection_label) for item in generated],
+        [
+            ("cascade_chain-result-1", "cascade_chain [performance result 1]"),
+            ("cascade_chain-result-2", "cascade_chain [memory result 2]"),
+        ],
+    )
 
     first_generated = graphs._source_model_with_entity_namespaces(
         output["results"][0],
@@ -313,10 +323,13 @@ def test_generated_hierarchies_and_metrics_are_result_local() -> None:
     first = first_generated.graph_collection
     second = second_generated.graph_collection
 
-    assert first["graphs"][0]["nodes"][0]["namespace"] == ("first root/first ancestor")
-    assert second["graphs"][0]["nodes"][0]["namespace"] == "second ancestor"
-    assert first["graphs"][0]["id"] == "cascade_chain-result-1-main"
-    assert second["graphs"][0]["id"] == "cascade_chain-result-2-main"
+    _ASSERT.assertEqual(
+        first["graphs"][0]["nodes"][0]["namespace"],
+        "first root/first ancestor",
+    )
+    _ASSERT.assertEqual(second["graphs"][0]["nodes"][0]["namespace"], "second ancestor")
+    _ASSERT.assertEqual(first["graphs"][0]["id"], "cascade_chain-result-1-main")
+    _ASSERT.assertEqual(second["graphs"][0]["id"], "cascade_chain-result-2-main")
 
     generated_artifacts = [
         models._GeneratedModelArtifact(
@@ -332,10 +345,10 @@ def test_generated_hierarchies_and_metrics_are_result_local() -> None:
         generated_artifacts,
         source_mapping,
     )["results"]
-    assert mappings[0]["resultIndex"] == 0
-    assert mappings[0]["resultKind"] == "performance"
-    assert mappings[1]["resultIndex"] == 1
-    assert mappings[1]["resultKind"] == "memory"
+    _ASSERT.assertEqual(mappings[0]["resultIndex"], 0)
+    _ASSERT.assertEqual(mappings[0]["resultKind"], "performance")
+    _ASSERT.assertEqual(mappings[1]["resultIndex"], 1)
+    _ASSERT.assertEqual(mappings[1]["resultKind"], "memory")
     first_group = {
         "node": {
             "collectionLabel": "cascade_chain [performance result 1]",
@@ -368,14 +381,14 @@ def test_generated_hierarchies_and_metrics_are_result_local() -> None:
         },
         "entityId": "shared-op",
     }
-    assert first_group in mappings[0]["mappings"]
-    assert first_group not in mappings[1]["mappings"]
-    assert second_group in mappings[1]["mappings"]
-    assert second_group not in mappings[0]["mappings"]
-    assert first_leaf in mappings[0]["mappings"]
-    assert first_leaf not in mappings[1]["mappings"]
-    assert second_leaf in mappings[1]["mappings"]
-    assert second_leaf not in mappings[0]["mappings"]
+    _ASSERT.assertIn(first_group, mappings[0]["mappings"])
+    _ASSERT.assertNotIn(first_group, mappings[1]["mappings"])
+    _ASSERT.assertIn(second_group, mappings[1]["mappings"])
+    _ASSERT.assertNotIn(second_group, mappings[0]["mappings"])
+    _ASSERT.assertIn(first_leaf, mappings[0]["mappings"])
+    _ASSERT.assertNotIn(first_leaf, mappings[1]["mappings"])
+    _ASSERT.assertIn(second_leaf, mappings[1]["mappings"])
+    _ASSERT.assertNotIn(second_leaf, mappings[0]["mappings"])
 
 
 def test_hierarchy_only_includes_source_adjacent_kinds_present_in_result() -> None:
@@ -406,11 +419,14 @@ def test_hierarchy_only_includes_source_adjacent_kinds_present_in_result() -> No
         ],
     }
 
-    assert graphs._result_entity_kind_hierarchies(result) == [
-        models._EntityKindHierarchy(
-            ("segment", "cascade", "chain", "source_operator")
-        )
-    ]
+    _ASSERT.assertEqual(
+        graphs._result_entity_kind_hierarchies(result),
+        [
+            models._EntityKindHierarchy(
+                ("segment", "cascade", "chain", "source_operator")
+            )
+        ],
+    )
 
 
 def test_hierarchy_omits_coarse_prefix_covered_by_finer_path() -> None:
@@ -460,11 +476,14 @@ def test_hierarchy_omits_coarse_prefix_covered_by_finer_path() -> None:
 
     hierarchies = graphs._result_entity_kind_hierarchies(result)
 
-    assert hierarchies == [
-        models._EntityKindHierarchy(
-            ("segment", "cascade", "chain", "source_operator")
-        )
-    ]
+    _ASSERT.assertEqual(
+        hierarchies,
+        [
+            models._EntityKindHierarchy(
+                ("segment", "cascade", "chain", "source_operator")
+            )
+        ],
+    )
 
     source = {
         "label": "Source Model",
@@ -487,13 +506,16 @@ def test_hierarchy_omits_coarse_prefix_covered_by_finer_path() -> None:
         },
     )
 
-    assert [
-        node["namespace"]
-        for node in generated.graph_collection["graphs"][0]["nodes"]
-    ] == [
-        "segment 0/cascade 0/chain 0",
-        "segment 0",
-    ]
+    _ASSERT.assertEqual(
+        [
+            node["namespace"]
+            for node in generated.graph_collection["graphs"][0]["nodes"]
+        ],
+        [
+            "segment 0/cascade 0/chain 0",
+            "segment 0",
+        ],
+    )
 
 
 def test_hierarchy_keeps_divergent_fine_paths() -> None:
@@ -519,10 +541,13 @@ def test_hierarchy_keeps_divergent_fine_paths() -> None:
         ],
     }
 
-    assert graphs._result_entity_kind_hierarchies(result) == [
-        models._EntityKindHierarchy(("root", "left", "source_operator")),
-        models._EntityKindHierarchy(("root", "right", "source_operator")),
-    ]
+    _ASSERT.assertEqual(
+        graphs._result_entity_kind_hierarchies(result),
+        [
+            models._EntityKindHierarchy(("root", "left", "source_operator")),
+            models._EntityKindHierarchy(("root", "right", "source_operator")),
+        ],
+    )
 
 
 def test_hierarchy_records_recursive_entity_kinds() -> None:
@@ -537,11 +562,14 @@ def test_hierarchy_records_recursive_entity_kinds() -> None:
         "entities": [{"id": "module-0", "kind": "nn_module"}],
     }
 
-    assert graphs._result_entity_kind_hierarchies(result) == [
-        models._EntityKindHierarchy(
-            ("nn_module", "source_operator"), frozenset({"nn_module"})
-        )
-    ]
+    _ASSERT.assertEqual(
+        graphs._result_entity_kind_hierarchies(result),
+        [
+            models._EntityKindHierarchy(
+                ("nn_module", "source_operator"), frozenset({"nn_module"})
+            )
+        ],
+    )
 
 
 def test_hierarchy_discovers_standalone_and_code_line_stack_paths() -> None:
@@ -554,16 +582,19 @@ def test_hierarchy_discovers_standalone_and_code_line_stack_paths() -> None:
         ]
     }
 
-    assert graphs._result_entity_kind_hierarchies(result) == [
-        models._EntityKindHierarchy(
-            ("code_line", "code_stack", "source_operator"),
-            frozenset({"code_stack"}),
-        ),
-        models._EntityKindHierarchy(
-            ("code_stack", "source_operator"),
-            frozenset({"code_stack"}),
-        ),
-    ]
+    _ASSERT.assertEqual(
+        graphs._result_entity_kind_hierarchies(result),
+        [
+            models._EntityKindHierarchy(
+                ("code_line", "code_stack", "source_operator"),
+                frozenset({"code_stack"}),
+            ),
+            models._EntityKindHierarchy(
+                ("code_stack", "source_operator"),
+                frozenset({"code_stack"}),
+            ),
+        ],
+    )
 
 
 def test_code_line_stack_hierarchy_retains_recursive_caller_lineages() -> None:
@@ -614,7 +645,10 @@ def test_code_line_stack_hierarchy_retains_recursive_caller_lineages() -> None:
         graphs._entities_by_id(result), hierarchy, set()
     )
 
-    assert projection.source_operator_paths_by_id["source"] == (
-        "line 20/stack 20",
-        "line 39/stack 39/stack 20",
+    _ASSERT.assertEqual(
+        projection.source_operator_paths_by_id["source"],
+        (
+            "line 20/stack 20",
+            "line 39/stack 39/stack 20",
+        ),
     )
