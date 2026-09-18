@@ -271,7 +271,7 @@ jobs:
     if: >-
       ${{
         github.repository_owner != 'arm' &&
-        needs.classify_release_ref.outputs.is_clean_release_tag == 'true'
+        needs.classify_release_ref.outputs.is_tag == 'true'
       }}
     needs:
       - classify_release_ref
