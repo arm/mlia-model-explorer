@@ -182,6 +182,33 @@ jobs:
           name: built-wheel
           path: dist/*
 
+  blackduck_full_scan:
+    name: Black Duck Full Scan
+    if: >-
+      ${{
+        github.repository_owner != 'arm' &&
+        needs.classify_release_ref.outputs.is_tag == 'true'
+      }}
+    needs:
+      - classify_release_ref
+    uses: Arm-Debug/github-workflow-wizardry/.github/workflows/blackduck-full-scan.yml@ca05ffc6ccf0f63fc7bff176e46024a033e9ff50
+    with:
+      project-name: mlia-model-explorer
+      project-version: ${{ github.ref_name }}
+      source-ref: ${{ github.sha }}
+      uv-dependencies: true
+      python-version: "3.10"
+      vault-namespace: iac-expkits/prod
+      vault-secrets: |
+        kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
+        kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | UV_INDEX_INTERNAL_USERNAME ;
+        kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_PASSWORD | UV_INDEX_INTERNAL_PASSWORD
+    secrets:
+      BLACKDUCK_API_TOKEN: ${{ secrets.BLACKDUCK_API_TOKEN }}
+      VAULT_URL: ${{ secrets.VAULT_URL }}
+      VAULT_ROLE_ID: ${{ secrets.VAULT_ROLE_ID }}
+      VAULT_SECRET_ID: ${{ secrets.VAULT_SECRET_ID }}
+
   publish_release:
     name: Publish Release
     if: >-
