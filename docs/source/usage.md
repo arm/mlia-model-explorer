@@ -69,7 +69,7 @@ Configure structured `[[filtering.collapse]]` rules in MLIA's user `config.toml`
 MLIA loads this file from the platform-standard configuration directory, such as
 `%LOCALAPPDATA%\arm\mlia\config.toml` on Windows or
 `$XDG_CONFIG_HOME/mlia/config.toml` on Linux. See the
-[MLIA configuration documentation](https://github.com/Arm-Debug/mlia#configuration)
+[MLIA configuration documentation](https://github.com/Arm/mlia#configuration)
 for defaults, raw-value glob semantics, and how to disable collapse.
 
 ## PyTorch code stacks
