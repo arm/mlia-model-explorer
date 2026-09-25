@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: Copyright 2026, Arm Limited and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+
+# Preserve the generated bundle bytes referenced by the license file's SHA-256.
+src/mlia/model_explorer/model-explorer-visualizer/main_embedded.js text eol=lf
+src/mlia/model_explorer/model-explorer-visualizer/main_embedded.js.license text eol=lf

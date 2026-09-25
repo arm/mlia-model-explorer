@@ -34,6 +34,19 @@ def fixture_checker_module() -> ModuleType:
     return load_checker_module()
 
 
+def test_vendored_visualizer_has_valid_generated_notices(
+    checker_module: ModuleType,
+) -> None:
+    """Validate the actual vendored bundle through its generated license sidecar."""
+    bundle = (
+        Path(__file__).resolve().parents[1]
+        / "src/mlia/model_explorer/model-explorer-visualizer/main_embedded.js"
+    )
+    checker = checker_module.CopyrightHeaderChecker()
+
+    _ASSERT.assertTrue(checker.check_files_have_updated_header([str(bundle)]))
+
+
 def test_current_inline_header_passes(
     tmp_path: Path, checker_module: ModuleType
 ) -> None:
