@@ -15,7 +15,7 @@ description = "ML Inference Advisor Model Explorer Plugin"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mlia==0.12.2",
+    "mlia==0.12.3",
     # Python adapter/conversion API only. The compatible browser runtime is the
     # vendored embedded visualizer documented in README.md.
     "ai-edge-model-explorer>=0.1.32,<0.2"
