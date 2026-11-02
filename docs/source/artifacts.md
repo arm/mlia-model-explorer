@@ -29,6 +29,11 @@ The exact number and names of hierarchy and overlay files depend on the MLIA
 results. Filenames are sanitized, length-bounded, and collision-disambiguated for
 portable output.
 
+ETRecord runs can additionally include compact chain-mapping, ETDump backend
+trace and companion PTE collections. They use this same directory layout,
+manifest and graph-qualified mapping contract. See [ETRecord profiling](etrecord.md)
+for their views and metric meaning.
+
 ## File roles
 
 | Artifact | Purpose |
@@ -41,6 +46,13 @@ portable output.
 | `entity-node-mappings.json` | Relates MLIA entity IDs to collection, graph, and node-qualified references. |
 | `manifest.json` | Records run metadata, artifact paths, overlay routing, and logical overlay display names. |
 | `bundle/index.html` | Embeds all usable artifacts, host configuration, and the browser runtime in one file. |
+
+A format integration may add `presentation.preferred_right_pane` to the
+manifest, containing a `collectionLabel` and `graphId`. The bundler uses that
+reference when it identifies an available generated graph, including a later
+graph in its collection. Without a valid preference, the existing node-data
+coverage rule selects the initial right pane.
+Ordinary inputs omit this optional metadata.
 
 ## Graph and node identity
 

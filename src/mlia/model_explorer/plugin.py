@@ -10,11 +10,9 @@ from typing import cast
 
 import click
 from mlia.core.errors import ConfigurationError
-from mlia.core.output_validation import validate_standardized_output
 from mlia.plugins.analysis import AnalysisPluginRegistry, AnalysisRunResult
 from mlia.plugins.plugins import AnalysisPlugin
 
-from mlia.model_explorer.artifacts import write_artifacts
 from mlia.model_explorer.bundler import build_artifacts_bundle, open_artifacts_bundle
 
 logger = logging.getLogger(__name__)
@@ -38,7 +36,7 @@ class _ModelExplorerAnalysisPlugin:
                     "Export Model Explorer artifacts after analysis. MODE is one of "
                     "'files' or 'open'."
                 ),
-            )
+            ),
         ]
 
     def enabled(self, args: Mapping[str, object]) -> bool:
@@ -47,6 +45,10 @@ class _ModelExplorerAnalysisPlugin:
 
     def run(self, result: AnalysisRunResult) -> None:
         """Export artifacts and optionally open them."""
+        from mlia.core.output_validation import validate_standardized_output
+
+        from mlia.model_explorer.artifacts import write_artifacts
+
         if result.settings:
             raise ConfigurationError(
                 "Model Explorer plugin settings are no longer supported; "
@@ -54,7 +56,7 @@ class _ModelExplorerAnalysisPlugin:
                 "[filtering] table instead."
             )
         validate_standardized_output(result.output or {}, use_jsonschema=False)
-        mode = cast(str, result.args["model_explorer"])
+        mode = cast(str, result.args.get("model_explorer") or "files")
         artifacts = write_artifacts(result)
         logger.info("Model Explorer artifacts written to %s", artifacts.root)
         logger.info("Model Explorer manifest: %s", artifacts.manifest)

@@ -20,6 +20,7 @@ from mlia.core.output_validation import SchemaValidationError
 from mlia.plugins.analysis import AnalysisPluginRegistry, AnalysisRunResult
 
 from mlia.model_explorer import bundler as bundler_module
+from mlia.model_explorer._artifacts import etrecord as et_integration
 from mlia.model_explorer._artifacts import graphs as graphs_module
 from mlia.model_explorer._artifacts import models as artifact_models
 from mlia.model_explorer._artifacts import node_data as node_data_module
@@ -117,6 +118,7 @@ def _run_result(
     model_name: str = "model.bin",
     settings: dict[str, object] | None = None,
     cli_model: bool = True,
+    companion_model: Path | None = None,
 ) -> AnalysisRunResult:
     model = tmp_path / model_name
     if model_exists:
@@ -192,7 +194,11 @@ def _run_result(
     return AnalysisRunResult(
         output=resolved_output,
         context=ctx,
-        args={"command": "check", "model_explorer": mode},
+        args={
+            "command": "check",
+            "model_explorer": mode,
+            "companion_model": str(companion_model) if companion_model else None,
+        },
         command_name="check",
         parameters={
             "model": str(model) if cli_model else None,
@@ -513,12 +519,12 @@ class _SingleGraphCollectionAdapter:
 
 
 class _MultipleGraphCollectionAdapter:
-    """Fake adapter returning multiple graph collections."""
+    """Fake adapter returning source and related graph collections."""
 
     metadata = SimpleNamespace(fileExts=["vgf"])
 
     def convert(self, model_path: str, settings: dict) -> dict:
-        """Return multiple graph collections whose labels MLIA should overwrite."""
+        """Return multiple graph collections with a source-specific label."""
         return {
             "graphCollections": [
                 {
@@ -526,13 +532,187 @@ class _MultipleGraphCollectionAdapter:
                     "graphs": [{"id": "left", "nodes": [{"id": "0", "label": "left"}]}],
                 },
                 {
-                    "label": "Right Adapter Label",
+                    "label": Path(model_path).name,
                     "graphs": [
                         {"id": "right", "nodes": [{"id": "1", "label": "right"}]}
                     ],
                 },
             ]
         }
+
+
+class _CompanionPteAdapter:
+    metadata = SimpleNamespace(fileExts=["pte"])
+    delegate_graph_id = "model.pte::forward_0_0"
+
+    def convert(self, model_path: str, settings: dict) -> dict:
+        del model_path, settings
+        return {
+            "graphCollections": [
+                {
+                    "label": "model.pte",
+                    "graphs": [
+                        {
+                            "id": "forward",
+                            "nodes": [
+                                {
+                                    "id": "forward_0_0",
+                                    "label": "VgfBackend",
+                                    "namespace": "forward",
+                                    "subgraphIds": [self.delegate_graph_id],
+                                    "attrs": [
+                                        {
+                                            "key": "Instruction Type",
+                                            "value": "DelegateCall",
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "label": "delegates",
+                    "graphs": [
+                        {
+                            "id": self.delegate_graph_id,
+                            "nodes": [
+                                {
+                                    "id": "0__op_562",
+                                    "attrs": [{"key": "spv id", "value": "%562"}],
+                                    "label": "Conv2D",
+                                    "namespace": "graph_partition_0",
+                                },
+                                {
+                                    "id": "0__op_569",
+                                    "attrs": [{"key": "spv id", "value": "%569"}],
+                                    "label": "Rescale",
+                                    "namespace": "graph_partition_0",
+                                },
+                                {
+                                    "id": "0__op_999",
+                                    "attrs": [{"key": "spv id", "value": "%999"}],
+                                    "label": "Rescale",
+                                    "namespace": "graph_partition_0",
+                                },
+                            ],
+                        }
+                    ],
+                },
+            ]
+        }
+
+
+def _companion_analysis(output, pte=None, *, associations=None, delegates=None):
+    output.setdefault("extensions", {}).setdefault("executorch", {})[
+        "companion_model"
+    ] = {
+        "path": str(pte) if pte else "model.pte",
+        "sha256": hashlib.sha256(pte.read_bytes()).hexdigest() if pte else "",
+        "delegates": delegates
+        or [
+            {
+                "id": "delegate",
+                "method": "forward",
+                "chain_index": 0,
+                "instruction_id": 0,
+            }
+        ],
+        "operator_associations": associations or [],
+    }
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_companion_verification_streams_pte(tmp_path, monkeypatch, changed):
+    """Verification detects changed companions without allocating the full PTE."""
+    pte = tmp_path / "model.pte"
+    pte.write_bytes(b"companion" * (1024 * 256))
+    output = {}
+    _companion_analysis(output, pte)
+    if changed:
+        pte.write_bytes(b"changed companion")
+    monkeypatch.setattr(
+        Path,
+        "read_bytes",
+        MagicMock(side_effect=AssertionError("PTE verification must stream")),
+    )
+    result = SimpleNamespace(output=output)
+    if changed:
+        with pytest.raises(ConfigurationError, match="Companion model changed"):
+            et_integration._companion_model_path(result)
+    else:
+        assert et_integration._companion_model_path(result) == pte
+
+
+def _companion_association(
+    spirv_id, chain_id, operator="Conv2D", *, delegate_id="delegate"
+):
+    return {
+        "result_index": 0,
+        "association": "structural-spirv-association",
+        "delegate_id": delegate_id,
+        "segment_index": 0,
+        "spirv_id": spirv_id,
+        "api_label": f"TOSA{operator.upper()}_spirv_id_{spirv_id}",
+        "chain_ids": [chain_id],
+        "chain_names": [f"Chain {chain_id.rsplit('/', 1)[-1]}"],
+        "chain_id": chain_id,
+        "compiler_operations": [operator],
+        "backend_operator_ids": [],
+    }
+
+
+class _CompanionETRecordAdapter(_SingleGraphCollectionAdapter):
+    metadata = SimpleNamespace(fileExts=["etrecord"])
+
+
+def _vgf_partition_entities(
+    partition: int,
+    chain_id: int,
+    operator: str,
+    spirv_id: int,
+) -> list[dict]:
+    segment = f"segment/{partition}"
+    cascade = f"cascade/{partition}"
+    chain = f"chain/{chain_id}"
+    stripe = f"stripe/{partition}"
+    return [
+        {
+            "id": segment,
+            "kind": "segment",
+            "name": f"Segment {partition}",
+            "child_ids": [cascade],
+        },
+        {
+            "id": cascade,
+            "kind": "cascade",
+            "name": f"Cascade {partition}",
+            "parent_ids": [segment],
+            "child_ids": [chain],
+        },
+        {
+            "id": chain,
+            "kind": "chain",
+            "name": f"Chain {chain_id}",
+            "parent_ids": [cascade],
+            "child_ids": [stripe],
+        },
+        {
+            "id": stripe,
+            "kind": "stripe",
+            "name": f"Stripe {partition}",
+            "parent_ids": [chain],
+            "attributes": {
+                "backend_operations": [
+                    {
+                        "operator": operator,
+                        "tosa_id": str(spirv_id),
+                        "api_labels": [f"TOSA{operator.upper()}_spirv_id_{spirv_id}"],
+                    }
+                ]
+            },
+        },
+    ]
 
 
 class _MatchingNamespaceAdapter:
@@ -592,12 +772,896 @@ def test_plugin_registers_with_registry() -> None:
 
     ModelExplorerAnalysisPlugin.register(registry)
 
-    _ASSERT.assertEqual(len(registry.plugins), 1)
+    assert len(registry.plugins) == 1
+
     options = registry.cli_options()
-    _ASSERT.assertEqual(len(options), 1)
-    _ASSERT.assertIsInstance(options[0], click.Option)
-    _ASSERT.assertEqual(options[0].opts, ["--model-explorer"])
-    _ASSERT.assertTrue(registry.enabled_plugins({"model_explorer": "files"}))
+    assert len(options) == 1
+    assert all(isinstance(option, click.Option) for option in options)
+
+    # options_by_name to avoid making the test depend on option ordering.
+    options_by_name = {option.name: option for option in options}
+
+    model_explorer = options_by_name["model_explorer"]
+    assert model_explorer.opts == ["--model-explorer"]
+    assert registry.enabled_plugins({"model_explorer": "files"})
+
+    assert "companion_model" not in options_by_name
+    assert not registry.enabled_plugins(
+        {"model_explorer": None, "companion_model": "model.pte"}
+    )
+
+
+@pytest.mark.parametrize(
+    "suffix,method,native_names",
+    [
+        (".etrecord", "forward", True),
+        (".etrecord", "decode", False),
+        (".bin", "encode", True),
+        (".bin", "forward", False),
+    ],
+)
+def test_etrecord_initial_chain_pane_uses_profiled_method(
+    tmp_path: Path, monkeypatch, suffix: str, method: str, native_names: bool
+) -> None:
+    """The manifest and bundle select the mapped method, regardless of order."""
+    collection = {
+        "label": "model" + suffix,
+        "graphs": [
+            {
+                "id": graph_method,
+                "nodes": [
+                    {
+                        "id": "conv_",
+                        "label": "Conv2d",
+                        "attrs": [
+                            {"key": "debug_handle", "value": "42"},
+                            {"key": "Op Type", "value": "aten.convolution.default"},
+                        ]
+                        + (
+                            [{"key": "Node Name", "value": "conv"}]
+                            if native_names
+                            else []
+                        ),
+                    }
+                ],
+            }
+            for graph_method in ("forward", "decode", "encode")
+        ],
+    }
+    monkeypatch.setattr(
+        source_model_module,
+        "_run_model_explorer_adapter",
+        lambda *_args: {"graphCollections": [collection]},
+    )
+    source_id = f"source_operator/etrecord/{method}/conv"
+    output = {
+        "schema_version": "1.2.0",
+        "model": {},
+        "target": {},
+        "backends": [],
+        "extensions": {
+            "executorch": {
+                "source_graph": {
+                    "method": method,
+                    "nodes": [
+                        {
+                            "id": source_id,
+                            "name": "conv",
+                            "op": "call_function",
+                            "debug_handle": 42,
+                        }
+                    ],
+                    "edges": [],
+                }
+            },
+        },
+        "results": [
+            {
+                "kind": "performance",
+                "entity_kinds": [
+                    {"id": "segment", "child_kinds": ["cascade"]},
+                    {"id": "cascade", "child_kinds": ["chain"]},
+                    {"id": "chain", "child_kinds": ["source_operator"]},
+                ],
+                "entities": [
+                    {
+                        "id": "segment/0",
+                        "kind": "segment",
+                        "child_ids": ["cascade/0"],
+                    },
+                    {
+                        "id": "cascade/0",
+                        "kind": "cascade",
+                        "parent_ids": ["segment/0"],
+                        "child_ids": ["chain/0"],
+                    },
+                    {
+                        "id": "chain/0",
+                        "name": "Chain 0",
+                        "kind": "chain",
+                        "parent_ids": ["cascade/0"],
+                        "child_ids": [source_id],
+                    },
+                    {
+                        "id": source_id,
+                        "name": "conv",
+                        "kind": "source_operator",
+                        "parent_ids": ["chain/0"],
+                        "attributes": {"debug_handle": 42},
+                    },
+                ],
+                "breakdowns": [
+                    {
+                        "entity_id": "chain/0",
+                        "metrics": [{"name": "total_cycles", "value": 10}],
+                    }
+                ],
+            }
+        ],
+    }
+    artifacts = write_artifacts(
+        _run_result(tmp_path, output=output, model_name="model" + suffix)
+    )
+    manifest = _read_json(artifacts.manifest)
+    expected_labels = [
+        "Source Model",
+        "segment_cascade_chain",
+        "ETRecord Chain Mapping",
+    ]
+    assert [
+        _read_json(artifacts.root / path)["label"] for path in manifest["model_paths"]
+    ][:3] == expected_labels
+    assert manifest["presentation"]["preferred_right_pane"] == {
+        "collectionLabel": "ETRecord Chain Mapping",
+        "graphId": f"chain-{method}",
+    }
+    bundle = _read_bundle_data(build_artifacts_bundle(artifacts.root))
+    assert [collection["label"] for collection in bundle["graphCollections"]][
+        :3
+    ] == expected_labels
+    assert [graph["id"] for graph in bundle["graphCollections"][0]["graphs"]] == [
+        method,
+        *(other for other in ("forward", "decode", "encode") if other != method),
+    ]
+    pane = bundle["initialUiState"]["paneStates"][1]
+    assert bundle["initialUiState"]["paneStates"][0]["selectedGraphId"] == method
+    assert pane["selectedGraphId"] == f"chain-{method}"
+    assert pane["selectedCollectionLabel"] == "ETRecord Chain Mapping"
+    assert _read_json(artifacts.standardized_output) == output
+
+
+@pytest.mark.parametrize("suffix", [".pte", ".PTE"])
+def test_write_artifacts_rejects_primary_pte_before_adapter_execution(
+    tmp_path: Path, monkeypatch, suffix: str
+) -> None:
+    """PTE companion support does not enable an incomplete primary-model path."""
+    run_adapter = MagicMock(return_value={"graphs": [{"id": "forward", "nodes": []}]})
+    monkeypatch.setattr(source_model_module, "_run_model_explorer_adapter", run_adapter)
+
+    with pytest.raises(
+        UnsupportedConfigurationError,
+        match=r"Model Explorer does not support model format '\.pte'\.",
+    ):
+        write_artifacts(_run_result(tmp_path, model_name="model" + suffix))
+
+    run_adapter.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "etrecord_suffix,companion_graph_id",
+    [(".etrecord", "forward_0_0"), (".bin", "model.pte::forward_0_0")],
+)
+def test_write_artifacts_adds_companion_model_view_with_result_metrics(
+    tmp_path: Path,
+    monkeypatch,
+    etrecord_suffix: str,
+    companion_graph_id: str,
+) -> None:
+    monkeypatch.setattr(_CompanionPteAdapter, "delegate_graph_id", companion_graph_id)
+    etrecord = tmp_path / f"model{etrecord_suffix}"
+    etrecord.write_bytes(b"etrecord")
+    pte = tmp_path / "model.pte"
+    pte.write_bytes(b"pte")
+    etrecord_module = SimpleNamespace(ETRecordAdapter=_CompanionETRecordAdapter)
+    pte_module = SimpleNamespace(PTEAdapter=_CompanionPteAdapter)
+
+    def import_adapter(module_name: str):
+        if module_name == "etrecord_adapter_model_explorer.main":
+            return etrecord_module
+        if module_name == "pte_adapter_model_explorer.main":
+            return pte_module
+        raise ImportError(module_name)
+
+    monkeypatch.setattr(
+        source_model_module.importlib,
+        "import_module",
+        MagicMock(side_effect=import_adapter),
+    )
+    monkeypatch.setattr(
+        source_model_module,
+        "_source_operator_node_ids",
+        MagicMock(
+            return_value={
+                "source_operator/conv": [
+                    artifact_models._NodeRef("Source Model", "main", "0")
+                ]
+            }
+        ),
+    )
+    output: dict = {
+        "schema_version": "1.2.0",
+        "model": {},
+        "target": {},
+        "backends": [],
+        "results": [
+            {
+                "kind": "performance",
+                "metrics": [
+                    {"name": "total_cycles", "value": 2711648, "unit": "cycles"}
+                ],
+                "entities": [
+                    {
+                        "id": "segment/0",
+                        "kind": "segment",
+                        "name": "Execute segment 0",
+                        "attributes": {"method": "forward"},
+                        "child_ids": ["cascade/2870"],
+                    },
+                    {
+                        "id": "cascade/2870",
+                        "kind": "cascade",
+                        "name": "Cascade 2870",
+                        "parent_ids": ["segment/0"],
+                        "child_ids": ["chain/1580"],
+                    },
+                    {
+                        "id": "chain/1580",
+                        "kind": "chain",
+                        "name": "Chain 1580",
+                        "parent_ids": ["cascade/2870"],
+                        "child_ids": ["stripe/1", "compiled/conv", "compiled/rescale"],
+                    },
+                    {
+                        "id": "stripe/1",
+                        "kind": "stripe",
+                        "name": "NX stripe 1",
+                        "parent_ids": ["chain/1580"],
+                        "attributes": {
+                            "stripe_id": 1,
+                            "mapping_confidence": "medium",
+                            "mapping_strategy": "ordered_category_match",
+                            "backend_operations": [
+                                {
+                                    "entity_id": "compiled/conv",
+                                    "tosa_id": "697",
+                                    "operator": "Conv2D",
+                                    "api_labels": ["TOSACONV2D_spirv_id_562"],
+                                },
+                                {
+                                    "entity_id": "compiled/rescale",
+                                    "tosa_id": "700",
+                                    "operator": "Rescale",
+                                    "api_labels": ["TOSARESCALE_spirv_id_569"],
+                                },
+                            ],
+                        },
+                    },
+                    {
+                        "id": "compiled/conv",
+                        "kind": "backend_operator",
+                        "name": "Conv2D",
+                        "parent_ids": ["chain/1580"],
+                        "child_ids": ["source_operator/conv"],
+                        "attributes": {"mapping_confidence": "representative"},
+                    },
+                    {
+                        "id": "compiled/rescale",
+                        "kind": "backend_operator",
+                        "name": "Rescale",
+                        "parent_ids": ["chain/1580"],
+                    },
+                    {
+                        "id": "source_operator/conv",
+                        "kind": "source_operator",
+                        "name": "aten_convolution_default",
+                        "parent_ids": ["compiled/conv"],
+                        "attributes": {"debug_handle": 4},
+                    },
+                ],
+                "breakdowns": [
+                    {
+                        "id": "cascade-cycles",
+                        "entity_id": "cascade/2870",
+                        "metrics": [
+                            {
+                                "name": "total_cycles",
+                                "value": 51089,
+                                "unit": "cycles",
+                            }
+                        ],
+                    },
+                    {
+                        "id": "chain-cycles",
+                        "entity_id": "chain/1580",
+                        "metrics": [
+                            {
+                                "name": "total_cycles",
+                                "value": 51089,
+                                "unit": "cycles",
+                            }
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+
+    performance = output["results"][0]
+    performance["entity_kinds"] = _TEST_ENTITY_KINDS
+    by_id = {entity["id"]: entity for entity in performance["entities"]}
+    by_id["source_operator/conv"]["parent_ids"].append("chain/1580")
+    by_id["chain/1580"]["child_ids"].append("source_operator/conv")
+    if "::" in companion_graph_id:
+        for entity in performance["entities"]:
+            entity.pop("child_ids", None)
+
+    _companion_analysis(
+        output,
+        pte,
+        associations=[
+            dict(
+                _companion_association(562, "chain/1580"),
+                backend_operator_ids=["compiled/conv"],
+            ),
+            dict(
+                _companion_association(569, "chain/1580", "Rescale"),
+                backend_operator_ids=["compiled/rescale"],
+            ),
+        ],
+    )
+
+    artifacts = write_artifacts(
+        _run_result(
+            tmp_path,
+            output=output,
+            model_name=etrecord.name,
+            companion_model=pte,
+        )
+    )
+
+    manifest = _read_json(artifacts.manifest)
+    assert manifest["model_paths"][0] == "models/model-source.json"
+    assert manifest["model_paths"][-2:] == [
+        "models/model-etdump-information.json",
+        "models/model-pte-runtime.json",
+    ]
+    etdump_information = _read_json(artifacts.root / manifest["model_paths"][-2])
+    runtime = _read_json(artifacts.root / manifest["model_paths"][-1])
+    assert etdump_information["label"] == "ETDump Backend Trace"
+    assert runtime["label"] == "PTE - VGF Backend Hierarchy"
+    assert not (artifacts.root / "models/model-pte-embedded-vgf.json").exists()
+    assert not (artifacts.root / "models/model-pte-compiled-execution.json").exists()
+    etdump_nodes = etdump_information["graphs"][0]["nodes"]
+    assert [node["label"] for node in etdump_nodes] == ["Conv2D", "Rescale"]
+    assert {node["namespace"] for node in etdump_nodes} == {
+        "Execute segment 0/Cascade 2870/Chain 1580"
+    }
+    assert etdump_nodes[1]["incomingEdges"] == [
+        {
+            "sourceNodeId": "etdump_operation_0_0_0",
+            "sourceNodeOutputId": "0",
+            "targetNodeInputId": "0",
+        }
+    ]
+    trace_attrs = {attr["key"]: attr["value"] for attr in etdump_nodes[0]["attrs"]}
+    assert "representative" in trace_attrs["ETRecord source association"]
+    assert trace_attrs["Statistic scope"] == (
+        "Profiling is shown on the chain group; no per-operator timing"
+    )
+    runtime_nodes = runtime["graphs"][0]["nodes"]
+    assert [node["id"] for node in runtime_nodes] == [
+        "0__op_562",
+        "0__op_569",
+        "0__op_999",
+    ]
+    for node, spirv_id in zip(runtime_nodes[:2], (562, 569), strict=True):
+        assert node["namespace"] == "Execute segment 0/Cascade 2870/Chain 1580"
+        attrs = {attr["key"]: attr["value"] for attr in node["attrs"]}
+        assert attrs["ETDump SPIR-V ID"] == str(spirv_id)
+        assert attrs["Operator mapping"] == "Structural SPIR-V association"
+        assert attrs["ETDump statistic scope"] == trace_attrs["Statistic scope"]
+    assert runtime_nodes[2]["namespace"] == "graph_partition_0"
+    assert runtime_nodes[1]["label"] == runtime_nodes[2]["label"]
+    assert {
+        "key": "ETDump hierarchy mapping",
+        "value": "No unique chain association",
+    } in runtime_nodes[2]["attrs"]
+    runtime_data = _read_json(
+        artifacts.root / "node-data" / "model-pte-runtime" / "total_cycles.json"
+    )
+    assert runtime_data[companion_graph_id]["results"] == {
+        "Execute segment 0/Cascade 2870": {
+            "value": 51089,
+            "bgColor": "#a0ffb0",
+        },
+        "Execute segment 0/Cascade 2870/Chain 1580": {
+            "value": 51089,
+            "bgColor": "#a0ffb0",
+        },
+    }
+    etdump_data = _read_json(
+        artifacts.root / "node-data" / "model-etdump-information" / "total_cycles.json"
+    )
+    assert etdump_data["etdump_information-0"]["results"] == {
+        "Execute segment 0/Cascade 2870": {
+            "value": 51089,
+            "bgColor": "#a0ffb0",
+        },
+        "Execute segment 0/Cascade 2870/Chain 1580": {
+            "value": 51089,
+            "bgColor": "#a0ffb0",
+        },
+    }
+    assert runtime_data[companion_graph_id]["hideAggregatedStats"] == ["sum"]
+    assert etdump_data["etdump_information-0"]["hideAggregatedStats"] == ["sum"]
+    assert _read_json(artifacts.standardized_output) == output
+    chain_group = "Execute segment 0/Cascade 2870/Chain 1580___group___"
+    sync_navigation = _read_json(artifacts.sync_navigation)
+    for origin_collection, origin_graph, target_collection, target_graph in (
+        (
+            "ETDump Backend Trace",
+            "etdump_information-0",
+            "PTE - VGF Backend Hierarchy",
+            companion_graph_id,
+        ),
+        (
+            "PTE - VGF Backend Hierarchy",
+            companion_graph_id,
+            "ETDump Backend Trace",
+            "etdump_information-0",
+        ),
+    ):
+        route = next(
+            item
+            for item in sync_navigation["graphMappings"]
+            if item["from"]
+            == {
+                "collectionLabel": origin_collection,
+                "graphId": origin_graph,
+                "nodeId": chain_group,
+            }
+        )
+        assert route["to"][target_collection][target_graph] == [chain_group]
+
+    # Consumer navigation uses published compiler relationships across all views.
+    source = artifact_models._NodeRef("Source Model", "main", "0").to_json()
+    trace = artifact_models._NodeRef(
+        "ETDump Backend Trace", "etdump_information-0", etdump_nodes[0]["id"]
+    ).to_json()
+    companion = artifact_models._NodeRef(
+        "PTE - VGF Backend Hierarchy", companion_graph_id, "0__op_562"
+    ).to_json()
+    mappings = _read_json(artifacts.entity_node_mappings)["results"][0]["mappings"]
+    for origin in (source, trace, companion):
+        route = next(
+            item for item in sync_navigation["graphMappings"] if item["from"] == origin
+        )
+        for target in (source, trace, companion):
+            if target != origin:
+                assert (
+                    target["nodeId"]
+                    in route["to"][target["collectionLabel"]][target["graphId"]]
+                )
+        assert {"node": origin, "entityId": "compiled/conv"} in mappings
+    assert not any(
+        route["from"]["nodeId"] == "0__op_999"
+        and any(route["to"].get("Source Model", {}).values())
+        for route in sync_navigation["graphMappings"]
+    )
+    rescale_route = next(
+        route
+        for route in sync_navigation["graphMappings"]
+        if route["from"]["nodeId"] == "0__op_569"
+    )
+    assert not any(rescale_route["to"].get("Source Model", {}).values())
+    assert (
+        etdump_nodes[1]["id"]
+        in rescale_route["to"]["ETDump Backend Trace"]["etdump_information-0"]
+    )
+
+    generated_leaves = [
+        item["node"]
+        for item in mappings
+        if item["entityId"] == "source_operator/conv"
+        and item["node"]["collectionLabel"] != "Source Model"
+    ]
+    assert {ref["collectionLabel"] for ref in generated_leaves} >= {
+        "ETRecord Chain Mapping",
+        "segment_cascade_chain",
+    }
+    for origin in (source, trace, companion, *generated_leaves):
+        route = next(
+            item for item in sync_navigation["graphMappings"] if item["from"] == origin
+        )
+        for target in (source, trace, companion, *generated_leaves):
+            if target != origin:
+                assert (
+                    target["nodeId"]
+                    in route["to"][target["collectionLabel"]][target["graphId"]]
+                )
+
+
+def test_embedded_vgf_mapping_indexes_companion_nodes_once():
+    """Large companions retain structural identities without repeated scans."""
+    visits = []
+
+    class CountedNodes(list):
+        def __iter__(self):
+            for node in super().__iter__():
+                visits.append(node["id"])
+                yield node
+
+    count = 100
+    output = {"results": [{"entities": []}]}
+    _companion_analysis(
+        output,
+        associations=[
+            dict(_companion_association(index, "chain/0"), chain_id=None)
+            for index in range(count)
+        ],
+    )
+    nodes = CountedNodes(
+        {"id": f"0__op_{index}", "attrs": [{"key": "spv id", "value": str(index)}]}
+        for index in range(count)
+    )
+    collection = {
+        "label": "PTE - VGF Backend Hierarchy",
+        "graphs": [{"id": "forward_0_0", "nodes": nodes}],
+    }
+    et_integration._pte_embedded_vgf_operator_refs(output, collection)
+    assert len(visits) <= 4 * count
+    assert all(
+        {"key": "ETDump SPIR-V ID", "value": str(index)} in node["attrs"]
+        for index, node in enumerate(nodes)
+    )
+
+
+def test_embedded_vgf_mapping_consumes_result_associations():
+    output = {
+        "results": [
+            {
+                "entities": [
+                    *_vgf_partition_entities(0, 10, "Conv2D", 100),
+                    *_vgf_partition_entities(1, 20, "Add", 100),
+                ]
+            }
+        ]
+    }
+    _companion_analysis(
+        output,
+        delegates=[
+            {"id": "a", "method": "forward", "chain_index": 0, "instruction_id": 0},
+            {"id": "b", "method": "decode", "chain_index": 0, "instruction_id": 0},
+        ],
+        associations=[
+            _companion_association(100, "chain/10", delegate_id="a"),
+            _companion_association(100, "chain/20", "Add", delegate_id="b"),
+        ],
+    )
+    collection = {
+        "label": "PTE - VGF Backend Hierarchy",
+        "graphs": [
+            {
+                "id": f"{method}_0_0",
+                "nodes": [
+                    {
+                        "id": f"0__op_{spirv_id}",
+                        "label": "same label",
+                        "attrs": [{"key": "spv id", "value": str(spirv_id)}],
+                    }
+                ],
+            }
+            for method, spirv_id in [("forward", 100), ("decode", 100)]
+        ],
+    }
+    refs = et_integration._pte_embedded_vgf_operator_refs(output, collection)
+    assert refs[(0, "chain/10")][0].graph_id == "forward_0_0"
+    assert refs[(0, "chain/20")][0].graph_id == "decode_0_0"
+    assert (
+        collection["graphs"][0]["nodes"][0]["namespace"]
+        == "Segment 0/Cascade 0/Chain 10"
+    )
+
+
+def test_etdump_and_companion_keep_identically_named_partitions_separate():
+    """Repeated local names cannot merge cycle overlays or navigation targets."""
+    entities = []
+    for partition in range(3):
+        partition_entities = _vgf_partition_entities(
+            partition, partition, "Conv2D", 100 + partition
+        )
+        for entity in partition_entities:
+            entity["name"] = {
+                "segment": "outer;Segment",
+                "cascade": "Cascade 0",
+                "chain": "Chain 0",
+                "stripe": "Stripe 0",
+            }[entity["kind"]]
+        # A label resembling an allocated suffix must not create a new collision.
+        if partition == 2:
+            partition_entities[0]["name"] = "outer;Segment [segment%2F0]"
+        entities.extend(partition_entities)
+    output = {
+        "results": [
+            {
+                "kind": "performance",
+                "entities": entities,
+                "breakdowns": [
+                    {
+                        "entity_id": f"chain/{index}",
+                        "metrics": [
+                            {"name": "total_cycles", "value": 100 * (index + 1)}
+                        ],
+                    }
+                    for index in range(3)
+                ],
+            }
+        ]
+    }
+    _companion_analysis(
+        output,
+        delegates=[
+            {
+                "id": str(index),
+                "method": "forward",
+                "chain_index": 0,
+                "instruction_id": index,
+            }
+            for index in range(3)
+        ],
+        associations=[
+            _companion_association(
+                100 + index, f"chain/{index}", delegate_id=str(index)
+            )
+            for index in range(3)
+        ],
+    )
+    companion = {
+        "label": "PTE - VGF Backend Hierarchy",
+        "graphs": [
+            {
+                "id": f"forward_0_{index}",
+                "nodes": [
+                    {
+                        "id": f"0__op_{100 + index}",
+                        "label": "Conv2D",
+                        "attrs": [{"key": "spv id", "value": str(100 + index)}],
+                    }
+                ],
+            }
+            for index in range(3)
+        ],
+    }
+
+    trace, refs, sync_refs = et_integration._etdump_information_collection(output)
+    companion_refs = et_integration._pte_embedded_vgf_operator_refs(output, companion)
+    trace_nodes = trace["graphs"][0]["nodes"]
+    namespaces = [node["namespace"] for node in trace_nodes]
+    assert len(set(map(model_explorer_normalized_namespace, namespaces))) == 3
+    cycles = next(
+        overlay
+        for overlay in node_data_module._entity_metric_overlays(
+            output, refs, {trace["label"]}
+        )
+        if overlay.key.name == "total_cycles"
+    )
+    for index, namespace in enumerate(namespaces):
+        assert companion["graphs"][index]["nodes"][0]["namespace"] == namespace
+        assert companion_refs[(0, f"chain/{index}")][
+            0
+        ].node_id == model_explorer_normalized_namespace(namespace)
+        assert (
+            sync_refs[(0, f"chain/{index}")][0].node_id
+            == model_explorer_normalized_namespace(namespace) + "___group___"
+        )
+        group_ref = artifact_models._NodeRef(
+            trace["label"],
+            "etdump_information-0",
+            model_explorer_normalized_namespace(namespace),
+        )
+        assert cycles.node_data["results"][group_ref]["value"] == 100 * (index + 1)
+
+
+def test_embedded_vgf_mapping_requires_adapter_identity():
+    output = {"results": [{"entities": _vgf_partition_entities(0, 10, "Conv2D", 100)}]}
+    _companion_analysis(output, associations=[_companion_association(100, "chain/10")])
+    collection = {
+        "label": "PTE - VGF Backend Hierarchy",
+        "graphs": [
+            {"id": "forward_0_0", "nodes": [{"id": "arbitrary", "label": "Conv2D"}]}
+        ],
+    }
+    with pytest.raises(ConfigurationError, match="structural identity"):
+        et_integration._pte_embedded_vgf_operator_refs(output, collection)
+
+
+@pytest.mark.parametrize("has_association", [False, True])
+def test_embedded_vgf_mapping_preserves_namespace_without_unique_chain(has_association):
+    """Absent or ambiguous analysis associations cannot assign a chain namespace."""
+    output = {"results": [{"entities": _vgf_partition_entities(0, 10, "Conv2D", 100)}]}
+    association = dict(_companion_association(100, "chain/10"), chain_id=None)
+    _companion_analysis(output, associations=[association] if has_association else [])
+    collection = {
+        "label": "PTE - VGF Backend Hierarchy",
+        "graphs": [
+            {
+                "id": "forward_0_0" if has_association else "decode_0_0",
+                "nodes": [
+                    {
+                        "id": "0__op_100",
+                        "label": "Conv2D",
+                        "namespace": "native",
+                        "attrs": [{"key": "spv id", "value": "100"}],
+                    }
+                ],
+            }
+        ],
+    }
+    assert et_integration._pte_embedded_vgf_operator_refs(output, collection) == {}
+    assert collection["graphs"][0]["nodes"][0]["namespace"] == "native"
+
+
+def test_companion_model_rejects_non_vgf_delegate() -> None:
+    collections = [
+        {
+            "label": "model.pte",
+            "graphs": [
+                {
+                    "id": "forward",
+                    "nodes": [
+                        {
+                            "id": "delegate",
+                            "label": "XnnpackBackend",
+                            "subgraphIds": ["xnnpack"],
+                        }
+                    ],
+                }
+            ],
+        },
+        {
+            "label": "delegates",
+            "graphs": [{"id": "xnnpack", "nodes": []}],
+        },
+    ]
+
+    with pytest.raises(RuntimeError, match="does not contain an embedded VgfBackend"):
+        et_integration._pte_vgf_graph_collection(collections)
+
+
+def test_companion_model_selects_only_vgf_graphs_from_mixed_backends() -> None:
+    collections = [
+        {
+            "label": "model.pte",
+            "graphs": [
+                {
+                    "id": "forward",
+                    "nodes": [
+                        {
+                            "id": "vgf-call",
+                            "label": "VgfBackend",
+                            "subgraphIds": ["vgf"],
+                        },
+                        {
+                            "id": "xnnpack-call",
+                            "label": "XnnpackBackend",
+                            "subgraphIds": ["xnnpack"],
+                        },
+                    ],
+                }
+            ],
+        },
+        {
+            "label": "delegates",
+            "graphs": [
+                {"id": "vgf", "nodes": [{"id": "conv", "label": "Conv2D"}]},
+                {"id": "xnnpack", "nodes": [{"id": "add", "label": "Add"}]},
+            ],
+        },
+    ]
+
+    graph_collection = et_integration._pte_vgf_graph_collection(collections)
+
+    assert graph_collection["label"] == "PTE - VGF Backend Hierarchy"
+    assert [graph["id"] for graph in graph_collection["graphs"]] == ["vgf"]
+
+
+def test_etdump_information_consumes_analysis_chain_relationships() -> None:
+    """The renderer consumes relationships already calculated during analysis."""
+    entities: list[dict] = [
+        {
+            "id": "segment/0",
+            "kind": "segment",
+            "name": "Segment 0",
+            "child_ids": ["cascade/0"],
+        },
+        {
+            "id": "cascade/0",
+            "kind": "cascade",
+            "name": "Cascade 0",
+            "parent_ids": ["segment/0"],
+            "child_ids": ["chain/0", "chain/1", "chain/2"],
+        },
+    ]
+    for chain_index in range(3):
+        chain_id = f"chain/{chain_index}"
+        stripe_id = f"stripe/{chain_index}"
+        source_operator_id = f"source_operator/{chain_index}"
+        entities.extend(
+            [
+                {
+                    "id": chain_id,
+                    "kind": "chain",
+                    "name": f"Chain {chain_index}",
+                    "parent_ids": ["cascade/0"],
+                    "child_ids": [stripe_id, source_operator_id],
+                },
+                {
+                    "id": stripe_id,
+                    "kind": "stripe",
+                    "name": f"Stripe {chain_index}",
+                    "parent_ids": [chain_id],
+                    "attributes": {
+                        "stripe_id": chain_index,
+                        "backend_operations": [
+                            {
+                                "tosa_id": str(chain_index),
+                                "operator": "Conv2D",
+                                "api_labels": [f"TOSACONV2D_spirv_id_{chain_index}"],
+                            }
+                        ],
+                    },
+                },
+                {
+                    "id": source_operator_id,
+                    "kind": "source_operator",
+                    "name": f"aten_convolution_default_{chain_index}",
+                    "parent_ids": [chain_id],
+                },
+            ]
+        )
+
+    collection, _, _ = et_integration._etdump_information_collection(
+        {
+            "results": [{"kind": "performance", "entities": entities}],
+            "extensions": {
+                "executorch": {
+                    "chain_relationships": [
+                        {
+                            "result_index": 0,
+                            "source_id": "chain/0",
+                            "target_id": "chain/1",
+                        }
+                    ]
+                }
+            },
+        },
+    )
+
+    assert collection is not None
+    nodes = collection["graphs"][0]["nodes"]
+    assert nodes[0]["incomingEdges"] == []
+    assert nodes[1]["incomingEdges"] == [
+        {
+            "sourceNodeId": "etdump_operation_0_0_0",
+            "sourceNodeOutputId": "0",
+            "targetNodeInputId": "etrecord_chain_0",
+        }
+    ]
+    assert nodes[2]["incomingEdges"] == []
+    assert {attr["key"]: attr["value"] for attr in nodes[1]["attrs"]} | {
+        "ETRecord predecessor chains": "Chain 0",
+        "Inter-chain relationship": ("Inferred from ETRecord source-operator topology"),
+    } == {attr["key"]: attr["value"] for attr in nodes[1]["attrs"]}
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
@@ -991,13 +2055,10 @@ def test_write_artifacts_uses_entity_references_for_node_data(
         / "model-hierarchy-segment_cascade_chain"
         / "cycles.json"
     )
-    _ASSERT.assertEqual(
-        generated_cycles["segment_cascade_chain-main"]["results"],
-        {
-            "1": {"value": 1},
-            "subgraph": {"value": 100},
-        },
-    )
+    assert generated_cycles["segment_cascade_chain-main"]["results"] == {
+        "1": {"value": 1, "bgColor": "#a0ffb0"},
+        "subgraph": {"value": 100, "bgColor": "#a0ffb0"},
+    }
     checks = _read_json(artifacts.root / "node-data" / "model-source" / "checks.json")
     _ASSERT.assertEqual(
         checks["main"]["results"],
@@ -1261,16 +2322,11 @@ def test_write_artifacts_groups_source_model_with_entity_namespaces(
         / "cycles.json"
     )
     generated_cycle_results = cycles["segment_cascade_chain-Main"]["results"]
-    _ASSERT.assertEqual(
-        generated_cycle_results,
-        {
-            "cascade 0": {"value": 10},
-            "cascade 0/chain 0": {"value": 100},
-        },
-    )
-    _ASSERT.assertTrue(
-        generated_source_operator_node_ids.isdisjoint(generated_cycle_results),
-    )
+    assert generated_cycle_results == {
+        "cascade 0": {"value": 10, "bgColor": "#a0ffb0"},
+        "cascade 0/chain 0": {"value": 100, "bgColor": "#a0ffb0"},
+    }
+    assert generated_source_operator_node_ids.isdisjoint(generated_cycle_results)
 
     manifest = _read_json(artifacts.manifest)
     _ASSERT.assertEqual(manifest["model_path"], "models/model-source.json")
@@ -1430,13 +2486,13 @@ def test_write_artifacts_keeps_statsless_parent_subgraphs_in_entity_namespaces(
         / "model-hierarchy-segment_cascade_chain"
         / "cycles.json"
     )
-    _ASSERT.assertEqual(
-        cycles["segment_cascade_chain-Main"]["results"],
-        {
-            "segment 0/cascade 0": {"value": 10},
-            "segment 0/cascade 0/chain 0": {"value": 100},
+    assert cycles["segment_cascade_chain-Main"]["results"] == {
+        "segment 0/cascade 0": {"value": 10, "bgColor": "#a0ffb0"},
+        "segment 0/cascade 0/chain 0": {
+            "value": 100,
+            "bgColor": "#a0ffb0",
         },
-    )
+    }
 
 
 def test_complete_entity_paths_strip_visible_parent_name_prefixes() -> None:
@@ -1676,15 +2732,18 @@ def test_write_artifacts_disambiguates_duplicate_entity_namespace_names(
         / "model-hierarchy-segment_cascade_chain"
         / "cycles.json"
     )
-    _ASSERT.assertEqual(
-        cycles["segment_cascade_chain-Main"]["results"],
-        {
-            "duplicate [cascade-a]": {"value": 10},
-            "duplicate [cascade-a]/op [chain-a]": {"value": 100},
-            "duplicate [cascade-b]": {"value": 20},
-            "duplicate [cascade-b]/op [chain-b]": {"value": 200},
+    assert cycles["segment_cascade_chain-Main"]["results"] == {
+        "duplicate [cascade-a]": {"value": 10, "bgColor": "#a0ffb0"},
+        "duplicate [cascade-a]/op [chain-a]": {
+            "value": 100,
+            "bgColor": "#a0ffb0",
         },
-    )
+        "duplicate [cascade-b]": {"value": 20, "bgColor": "#ff8888"},
+        "duplicate [cascade-b]/op [chain-b]": {
+            "value": 200,
+            "bgColor": "#ff8888",
+        },
+    }
 
 
 def test_write_artifacts_escapes_entity_name_namespace_separators(
@@ -1766,13 +2825,10 @@ def test_write_artifacts_escapes_entity_name_namespace_separators(
         / "model-hierarchy-segment_cascade_chain"
         / "cycles.json"
     )
-    _ASSERT.assertEqual(
-        cycles["segment_cascade_chain-Main"]["results"],
-        {
-            r"cascade\/0": {"value": 10},
-            r"cascade\/0/chain\/0": {"value": 100},
-        },
-    )
+    assert cycles["segment_cascade_chain-Main"]["results"] == {
+        r"cascade\/0": {"value": 10, "bgColor": "#a0ffb0"},
+        r"cascade\/0/chain\/0": {"value": 100, "bgColor": "#a0ffb0"},
+    }
 
 
 def test_write_artifacts_keeps_parent_subgraphs_result_local(
@@ -1883,13 +2939,13 @@ def test_write_artifacts_keeps_parent_subgraphs_result_local(
         / "model-hierarchy-segment_cascade_chain-result-1"
         / "cycles.json"
     )
-    _ASSERT.assertEqual(
-        cycles["segment_cascade_chain-result-1-Main"]["results"],
-        {
-            "segment 0/cascade 0": {"value": 10},
-            "segment 0/cascade 0/chain 0": {"value": 100},
+    assert cycles["segment_cascade_chain-result-1-Main"]["results"] == {
+        "segment 0/cascade 0": {"value": 10, "bgColor": "#a0ffb0"},
+        "segment 0/cascade 0/chain 0": {
+            "value": 100,
+            "bgColor": "#a0ffb0",
         },
-    )
+    }
     _ASSERT.assertNotIn("segment_cascade_chain-result-2-Main", cycles)
     memory = _read_json(
         artifacts.root
@@ -2174,21 +3230,16 @@ def test_write_artifacts_emits_separate_overlays_per_result_field(
     npu_cycles = _read_json(
         artifacts.root / "node-data" / "model-source" / "npu_cycles.json"
     )
-    _ASSERT.assertEqual(npu_cycles["main"]["name"], "npu_cycles")
-    _ASSERT.assertEqual(
-        npu_cycles["main"]["gradient"],
-        [
-            {"stop": 0, "bgColor": "#2e7d32"},
-            {"stop": 1, "bgColor": "#c62828"},
-        ],
-    )
-    _ASSERT.assertEqual(
-        npu_cycles["main"]["results"],
-        {
-            "0": {"value": 123},
-            "1": {"value": 7},
-        },
-    )
+    assert npu_cycles["main"]["name"] == "npu_cycles"
+    assert npu_cycles["main"]["gradient"] == [
+        {"stop": 0, "bgColor": "#a0ffb0"},
+        {"stop": 0.5, "bgColor": "#fff855"},
+        {"stop": 1, "bgColor": "#ff8888"},
+    ]
+    assert npu_cycles["main"]["results"] == {
+        "0": {"value": 123},
+        "1": {"value": 7},
+    }
 
     sram = _read_json(
         artifacts.root / "node-data" / "model-source" / "sram (bytes).json"
@@ -2251,11 +3302,31 @@ def _write_metric_overlay_artifacts(
     )
 
 
+@pytest.mark.parametrize(
+    ("metric_name", "additive", "block_indices"),
+    [
+        ("cycles", True, None),
+        ("Runtime Total P50", False, None),
+        ("Runtime Total Avg", False, (0, 0)),
+        ("Runtime Total Avg", True, (0, 0)),
+        ("Runtime Total Avg", True, (0, 1)),
+    ],
+    ids=[
+        "additive",
+        "percentile",
+        "shared",
+        "matching-executions",
+        "disjoint-executions",
+    ],
+)
 def test_source_namespace_metrics_are_projected_through_faithful_hierarchy(
     tmp_path: Path,
     monkeypatch,
+    metric_name: str,
+    additive: bool,
+    block_indices: tuple[int, int] | None,
 ) -> None:
-    """Core projection adds source namespace group metrics without flattening."""
+    """Consumer projection honors additive flags and recorded execution cohorts."""
     fake_module = SimpleNamespace(TfliteAdapter=_NamespaceMetricAdapter)
     monkeypatch.setattr(
         source_model_module.importlib,
@@ -2308,21 +3379,43 @@ def test_source_namespace_metrics_are_projected_through_faithful_hierarchy(
         ],
     }
 
+    for index, breakdown in enumerate(output["results"][0]["breakdowns"]):
+        metric = breakdown["metrics"][0]
+        metric["name"] = metric_name
+        metric["unit"] = "cycles" if metric_name == "cycles" else "ms"
+        if not additive:
+            metric.pop("aggregation")
+        if block_indices is not None:
+            metric["qualifiers"] = {
+                "etdump_execution_cohort": [
+                    {"block_index": block_indices[index], "sample_count": 2}
+                ]
+            }
+
     generated = write_artifacts(
         _run_result(tmp_path, output=output, model_name="model.tflite")
     )
-
-    cycles = _read_json(generated.root / "node-data" / "model-source" / "cycles.json")
-    _ASSERT.assertEqual(
-        cycles["main"]["results"],
-        {
-            "0": {"value": 10},
-            "1": {"value": 20},
-            "stage___group___": {"value": 30},
-            "stage/convolution___group___": {"value": 10},
-            "stage/resize___group___": {"value": 20},
-        },
-    )
+    overlays = [
+        graph
+        for path in generated.node_data
+        for graph in _read_json(path).values()
+        if graph["name"].startswith(metric_name)
+    ]
+    assert overlays
+    entries = {
+        node: entry
+        for overlay in overlays
+        for node, entry in overlay["results"].items()
+    }
+    assert entries["0"]["value"] == 10
+    assert entries["1"]["value"] == 20
+    if additive and (block_indices is None or len(set(block_indices)) == 1):
+        assert entries["stage___group___"]["value"] == 30
+    else:
+        assert "stage___group___" not in entries
+    assert entries["stage/convolution___group___"]["value"] == 10
+    assert entries["stage/resize___group___"]["value"] == 20
+    assert _read_json(generated.standardized_output) == output
 
 
 def test_source_namespace_metrics_use_explicit_group_ids_when_tensor_names_collide(
@@ -3213,20 +4306,18 @@ def test_nonobject_metric_qualifiers_are_skipped(
         ],
     )
 
-    _ASSERT.assertEqual([path.name for path in artifacts.node_data], ["cycles.json"])
-    _ASSERT.assertEqual(
-        _read_json(artifacts.node_data[0])["main"],
-        {
-            "name": "cycles",
-            "results": {"0": {"value": 3}},
-            "showExpandedSummaryOnGroupNode": True,
-            "showLabelCountColumnsInChildrenStatsTable": True,
-            "gradient": [
-                {"stop": 0, "bgColor": "#2e7d32"},
-                {"stop": 1, "bgColor": "#c62828"},
-            ],
-        },
-    )
+    assert [path.name for path in artifacts.node_data] == ["cycles.json"]
+    assert _read_json(artifacts.node_data[0])["main"] == {
+        "name": "cycles",
+        "results": {"0": {"value": 3}},
+        "showExpandedSummaryOnGroupNode": True,
+        "showLabelCountColumnsInChildrenStatsTable": True,
+        "gradient": [
+            {"stop": 0, "bgColor": "#a0ffb0"},
+            {"stop": 0.5, "bgColor": "#fff855"},
+            {"stop": 1, "bgColor": "#ff8888"},
+        ],
+    }
 
 
 def test_overlay_display_name_collisions_still_use_category_and_result_identity() -> (
@@ -3314,32 +4405,28 @@ def test_write_artifacts_disambiguates_normalized_node_data_filenames(
     )
     first = _read_json(artifacts.node_data[0])
     second = _read_json(artifacts.node_data[1])
-    _ASSERT.assertEqual(
-        first["main"],
-        {
-            "name": "latency/read (ticks)",
-            "results": {"0": {"value": 1}},
-            "showExpandedSummaryOnGroupNode": True,
-            "showLabelCountColumnsInChildrenStatsTable": True,
-            "gradient": [
-                {"stop": 0, "bgColor": "#2e7d32"},
-                {"stop": 1, "bgColor": "#c62828"},
-            ],
-        },
-    )
-    _ASSERT.assertEqual(
-        second["main"],
-        {
-            "name": "latency:read (ticks)",
-            "results": {"0": {"value": 2}},
-            "showExpandedSummaryOnGroupNode": True,
-            "showLabelCountColumnsInChildrenStatsTable": True,
-            "gradient": [
-                {"stop": 0, "bgColor": "#2e7d32"},
-                {"stop": 1, "bgColor": "#c62828"},
-            ],
-        },
-    )
+    assert first["main"] == {
+        "name": "latency/read (ticks)",
+        "results": {"0": {"value": 1}},
+        "showExpandedSummaryOnGroupNode": True,
+        "showLabelCountColumnsInChildrenStatsTable": True,
+        "gradient": [
+            {"stop": 0, "bgColor": "#a0ffb0"},
+            {"stop": 0.5, "bgColor": "#fff855"},
+            {"stop": 1, "bgColor": "#ff8888"},
+        ],
+    }
+    assert second["main"] == {
+        "name": "latency:read (ticks)",
+        "results": {"0": {"value": 2}},
+        "showExpandedSummaryOnGroupNode": True,
+        "showLabelCountColumnsInChildrenStatsTable": True,
+        "gradient": [
+            {"stop": 0, "bgColor": "#a0ffb0"},
+            {"stop": 0.5, "bgColor": "#fff855"},
+            {"stop": 1, "bgColor": "#ff8888"},
+        ],
+    }
 
 
 @pytest.mark.parametrize(
@@ -3359,7 +4446,7 @@ def test_plugin_rejects_obsolete_nonempty_settings(
     ModelExplorerAnalysisPlugin.register(registry)
     plugin = registry.plugins[0]
     write = MagicMock()
-    monkeypatch.setattr("mlia.model_explorer.plugin.write_artifacts", write)
+    monkeypatch.setattr("mlia.model_explorer.artifacts.write_artifacts", write)
 
     with pytest.raises(ConfigurationError, match="no longer supported"):
         plugin.run(_run_result(tmp_path, settings=settings))
@@ -3376,7 +4463,7 @@ def test_plugin_rejects_invalid_output_before_writing(
     ModelExplorerAnalysisPlugin.register(registry)
     plugin = registry.plugins[0]
     write = MagicMock()
-    monkeypatch.setattr("mlia.model_explorer.plugin.write_artifacts", write)
+    monkeypatch.setattr("mlia.model_explorer.artifacts.write_artifacts", write)
 
     with pytest.raises(SchemaValidationError):
         plugin.run(_run_result(tmp_path, output={"schema_version": "1.2.0"}))
@@ -3402,6 +4489,35 @@ def test_plugin_run_files_writes_bundle_without_opening(
 
     build_bundle.assert_called_once()
     _ASSERT.assertEqual(build_bundle.call_args.args[0].name, "model-explorer")
+    open_bundle.assert_not_called()
+
+
+def test_plugin_run_explicit_files_mode_with_companion(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Explicit visualization consumes a companion like other analysis results."""
+    registry = AnalysisPluginRegistry()
+    ModelExplorerAnalysisPlugin.register(registry)
+    plugin = registry.plugins[0]
+    artifacts = SimpleNamespace(
+        root=tmp_path / "model-explorer",
+        manifest=tmp_path / "model-explorer" / "manifest.json",
+    )
+    write = MagicMock(return_value=artifacts)
+    build_bundle = MagicMock(return_value=tmp_path / "index.html")
+    open_bundle = MagicMock()
+    monkeypatch.setattr("mlia.model_explorer.artifacts.write_artifacts", write)
+    monkeypatch.setattr(
+        "mlia.model_explorer.plugin.build_artifacts_bundle", build_bundle
+    )
+    monkeypatch.setattr("mlia.model_explorer.plugin.open_artifacts_bundle", open_bundle)
+    result = _run_result(tmp_path, mode="files", model_exists=False)
+    result.args["companion_model"] = "model.pte"
+
+    plugin.run(result)
+
+    write.assert_called_once_with(result)
+    build_bundle.assert_called_once_with(artifacts.root)
     open_bundle.assert_not_called()
 
 
@@ -3731,9 +4847,22 @@ def test_build_artifacts_bundle_escapes_model_name_in_page_title(
     )
 
 
+@pytest.mark.parametrize(
+    ("qualifiers", "overlay_name"),
+    [
+        ({}, "total_cycles"),
+        (
+            {"etdump_execution_cohort": [{"block_index": 1, "record_index": 0}]},
+            "total_cycles "
+            '[etdump_execution_cohort=[{"block_index":1,"record_index":0}]]',
+        ),
+    ],
+)
 def test_build_artifacts_bundle_opens_source_and_overlay_rich_entity_graph_side_by_side(
     tmp_path: Path,
     monkeypatch,
+    qualifiers: dict,
+    overlay_name: str,
 ) -> None:
     """Initial split view prefers the generated graph with greatest data coverage."""
     fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
@@ -3767,12 +4896,14 @@ def test_build_artifacts_bundle_opens_source_and_overlay_rich_entity_graph_side_
                 "breakdowns": [
                     {
                         "entity_id": "chain-0",
+                        "qualifiers": qualifiers,
                         "metrics": [
                             {"name": "total_cycles", "value": 456, "unit": "cycles"}
                         ],
                     },
                     {
                         "entity_id": "module-0",
+                        "qualifiers": qualifiers,
                         "metrics": [
                             {"name": "total_cycles", "value": 123, "unit": "cycles"}
                         ],
@@ -3821,8 +4952,8 @@ def test_build_artifacts_bundle_opens_source_and_overlay_rich_entity_graph_side_
     _ASSERT.assertEqual(
         data["selectedNodeData"],
         [
-            {"modelName": "nn_module", "name": "total_cycles"},
-            {"modelName": "segment_cascade_chain", "name": "total_cycles"},
+            {"modelName": "nn_module", "name": overlay_name},
+            {"modelName": "segment_cascade_chain", "name": overlay_name},
         ],
     )
 
@@ -4365,11 +5496,11 @@ def test_write_artifacts_overwrites_single_adapter_graph_collection_label(
     _ASSERT.assertEqual(manifest["node_data"], [])
 
 
-def test_write_artifacts_rejects_multiple_adapter_graph_collections(
+def test_write_artifacts_rejects_multiple_non_etrecord_graph_collections(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    """Multiple adapter graph collections fail instead of being flattened."""
+    """Non-ETRecord adapters retain main's single-collection contract."""
     fake_module = SimpleNamespace(VGFAdapter=_MultipleGraphCollectionAdapter)
     monkeypatch.setattr(
         source_model_module.importlib,
@@ -4377,14 +5508,12 @@ def test_write_artifacts_rejects_multiple_adapter_graph_collections(
         MagicMock(return_value=fake_module),
     )
 
-    with pytest.raises(RuntimeError) as err:
+    with pytest.raises(RuntimeError) as error:
         write_artifacts(_run_result(tmp_path, model_name="model.vgf"))
-
-    _ASSERT.assertEqual(
-        str(err.value),
+    assert str(error.value) == (
         "Model Explorer adapter returned multiple graph collections; "
         "mlia-model-explorer currently requires exactly one. "
-        "Returned collections: Left Adapter Label, Right Adapter Label.",
+        "Returned collections: Left Adapter Label, model.vgf."
     )
 
 

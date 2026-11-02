@@ -17,8 +17,10 @@ The plugin contributes one Click option:
 --model-explorer MODE
 ```
 
-`MODE` is either `files` or `open`. Without the option, the plugin is disabled
-and has no effect on the analysis run.
+`MODE` is either `files` or `open`. Without this option the plugin is disabled.
+The core CLI owns `--companion-model PATH` and the Python API accepts
+`companion_model`. Analysis publishes companion relationships independently of
+visualization. See [ETRecord profiling](etrecord.md) for the rendering requirements.
 
 ## Invocation contract
 

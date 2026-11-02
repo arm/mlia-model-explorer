@@ -107,6 +107,8 @@ def _manifest(
     node_data_artifacts: list[_NodeDataArtifact],
     sync_navigation_path: Path,
     entity_node_mappings_path: Path,
+    *,
+    preferred_graph: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     root = result.output_dir / "model-explorer"
     model_paths = [path for path in [model_path, *generated_model_paths] if path]
@@ -128,6 +130,8 @@ def _manifest(
             _node_data_overlay_keys_and_display_names(node_data_artifacts)
         ),
     }
+    if preferred_graph is not None:
+        manifest["presentation"] = {"preferred_right_pane": preferred_graph}
     if generated_model_paths:
         manifest["model_paths"] = [_relative_path(path, root) for path in model_paths]
         manifest["generated_models"] = [

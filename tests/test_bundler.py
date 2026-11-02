@@ -198,6 +198,47 @@ def test_selected_node_data_uses_graph_level_effective_name() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "display_name", ["total_cycles [capture=first]", "Recorded chain cycles"]
+)
+def test_selected_node_data_uses_metric_identity_and_collection_availability(
+    display_name: str,
+) -> None:
+    """Qualified totals keep priority without selecting another collection's run."""
+    other_name = "total_cycles [capture=second]"
+    runs = [
+        _run(
+            label,
+            "fallback",
+            {"main": _graph_data({"node": {"value": 1}}, name=name)},
+        )
+        for label, name in [
+            ("PTE", "op_cycles"),
+            ("PTE", display_name),
+            ("ETDump", other_name),
+            ("Fallback", "op_cycles"),
+            ("Source", "total_cycles_p50"),
+        ]
+    ]
+    metadata = [
+        {
+            "overlayKey": {"category": "metric", "name": metric},
+            "displayName": name,
+        }
+        for metric, name in [
+            ("total_cycles_p50", "total_cycles_p50"),
+            ("total_cycles", display_name),
+            ("total_cycles", other_name),
+        ]
+    ]
+
+    assert bundler._selected_node_data(runs, metadata) == [
+        {"modelName": "ETDump", "name": other_name},
+        {"modelName": "Fallback", "name": "op_cycles"},
+        {"modelName": "PTE", "name": display_name},
+    ]
+
+
 def test_initial_ui_state_prefers_greater_valid_node_data_coverage() -> None:
     """Valid value coverage wins even when another graph has more overlay runs."""
     source = _graph_collection("Source Model", "source", [{"id": "source-node"}])
@@ -408,3 +449,51 @@ def test_initial_ui_state_ignores_later_graph_coverage() -> None:
         initial_ui_state["paneStates"][1]["selectedCollectionLabel"],
         "first-graph-rich",
     )
+
+
+@pytest.mark.parametrize(
+    "label", ["Generic preferred view", "ETRecord Chain Mapping [performance result 1]"]
+)
+@pytest.mark.parametrize("graph_index", [0, 1])
+def test_initial_ui_state_uses_explicit_graph_preference(
+    label: str, graph_index: int
+) -> None:
+    """A graph reference selects the pane independently of display-name policy."""
+    source = _graph_collection("Source Model", "source", [{"id": "source-node"}])
+    rich = _graph_collection("Rich view", "preferred", [{"id": "r"}])
+    graphs = [("preferred", [{"id": "p"}])]
+    if graph_index:
+        graphs.insert(0, ("unprofiled", [{"id": "u"}]))
+    preferred = _multi_graph_collection(label, graphs)
+    runs = [
+        _run("Rich view", "cycles", {"preferred": _graph_data({"r": {"value": 10}})})
+    ]
+    state = bundler._initial_ui_state(
+        [source, rich, preferred],
+        runs,
+        preferred_graph={"collectionLabel": label, "graphId": "preferred"},
+    )
+    assert state["paneStates"][1]["selectedGraphId"] == "preferred"
+    assert state["paneStates"][1]["selectedCollectionLabel"] == label
+
+
+@pytest.mark.parametrize(
+    "preference",
+    [
+        None,
+        {"collectionLabel": "Missing view", "graphId": "named"},
+        {"collectionLabel": "ETRecord Chain Mapping", "graphId": "missing"},
+    ],
+)
+def test_etrecord_display_label_does_not_override_generic_fallback(
+    preference: dict[str, str] | None,
+) -> None:
+    """A label alone never opts an arbitrary graph into format-specific policy."""
+    source = _graph_collection("Source Model", "source", [{"id": "s"}])
+    rich = _graph_collection("Rich view", "rich", [{"id": "r"}])
+    named = _graph_collection("ETRecord Chain Mapping", "named", [{"id": "n"}])
+    runs = [_run("Rich view", "cycles", {"rich": _graph_data({"r": {"value": 10}})})]
+    state = bundler._initial_ui_state(
+        [source, rich, named], runs, preferred_graph=preference
+    )
+    assert state["paneStates"][1]["selectedGraphId"] == "rich"

@@ -8,7 +8,7 @@ import hashlib
 import json
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 from urllib.parse import quote
 
 from mlia.core import output_schema as schema
@@ -31,10 +31,14 @@ from .models import (
     _GraphProjection,
     _HierarchyGraphCollection,
     _HierarchyPathProjection,
+    _HierarchyPresentation,
     _NodeRef,
 )
 from .serialization import _safe_filename, _write_json
-from .source_model import _jsonable, _without_none
+from .source_model import (
+    _jsonable,
+    _without_none,
+)
 
 
 def _generated_hierarchy_graph_id(graph_name: str, source_graph_id: str) -> str:
@@ -89,7 +93,10 @@ def _result_entity_node_ids(
     return node_ids_by_entity
 
 
-def _append_unique_items(target: list[_NodeRef], items: list[_NodeRef]) -> None:
+_Item = TypeVar("_Item")
+
+
+def _append_unique_items(target: list[_Item], items: list[_Item]) -> None:
     """Append node references while preserving first-seen order."""
     for item in items:
         if item not in target:
@@ -320,12 +327,16 @@ def _write_entity_subgraph_model_file(
     output: dict[str, Any],
     source_graph_collection: dict[str, Any] | None,
     source_operator_to_node_ids: dict[str, list[_NodeRef]],
+    *,
+    presentation: _HierarchyPresentation = _HierarchyPresentation(),
 ) -> list[_GeneratedModelArtifact]:
     """Write and retain one graph collection per entity-kind hierarchy."""
     if source_graph_collection is None:
         return []
 
-    generated_hierarchies = _generated_entity_hierarchies(output)
+    generated_hierarchies = _generated_entity_hierarchies(
+        output, presentation=presentation
+    )
     if not generated_hierarchies:
         return []
 
@@ -351,6 +362,7 @@ def _write_entity_subgraph_model_file(
             generated.graph_name,
             generated.collection_label,
             source_operator_to_node_ids,
+            presentation=presentation,
         )
         _write_json(path, generated_collection.graph_collection)
         artifacts.append(
@@ -366,6 +378,8 @@ def _write_entity_subgraph_model_file(
 
 def _generated_entity_hierarchies(
     output: dict[str, Any],
+    *,
+    presentation: _HierarchyPresentation = _HierarchyPresentation(),
 ) -> list[_GeneratedEntityHierarchy]:
     """Describe hierarchy collections with globally collision-free identities."""
     results = output.get("results", [])
@@ -377,23 +391,36 @@ def _generated_entity_hierarchies(
         if not isinstance(result, dict):
             continue
         result_kind = str(result.get("kind") or "result")
-        for hierarchy in _result_entity_kind_hierarchies(result):
+        hierarchies = {
+            hierarchy.path: hierarchy
+            for hierarchy in [
+                *_result_entity_kind_hierarchies(result),
+                *_additional_entity_kind_hierarchies(result, presentation),
+            ]
+        }
+        for hierarchy in (hierarchies[path] for path in sorted(hierarchies)):
             candidates.append((result_index, result_kind, hierarchy))
 
+    def view_name(hierarchy: _EntityKindHierarchy) -> str:
+        kinds = hierarchy.backend_kinds
+        kinds = tuple(kind for kind in kinds if kind not in presentation.hidden_kinds)
+        return _entity_hierarchy_graph_name(kinds)
+
     base_counts = Counter(
-        hierarchy.graph_name.casefold() for _, _, hierarchy in candidates
+        view_name(hierarchy).casefold() for _, _, hierarchy in candidates
     )
     result_local_counts = Counter(
-        (hierarchy.graph_name.casefold(), result_index)
+        (view_name(hierarchy).casefold(), result_index)
         for result_index, _, hierarchy in candidates
     )
     result_local_ordinals: Counter[tuple[str, int]] = Counter()
     generated: list[_GeneratedEntityHierarchy] = []
     for result_index, result_kind, hierarchy in candidates:
-        base_name = hierarchy.graph_name
+        base_name = view_name(hierarchy)
+        display_name = presentation.collection_labels.get(base_name, base_name)
         base_key = base_name.casefold()
         graph_name = base_name
-        collection_label = base_name
+        collection_label = display_name
         if base_counts[base_key] > 1:
             result_key = (base_key, result_index)
             result_local_ordinals[result_key] += 1
@@ -408,7 +435,7 @@ def _generated_entity_hierarchies(
                 label_qualifier = (
                     f"{label_qualifier}, hierarchy {hierarchy_ordinal}: {readable_path}"
                 )
-            collection_label = f"{base_name} [{label_qualifier}]"
+            collection_label = f"{display_name} [{label_qualifier}]"
         generated.append(
             _GeneratedEntityHierarchy(
                 result_index,
@@ -417,6 +444,14 @@ def _generated_entity_hierarchies(
                 graph_name,
                 collection_label,
             )
+        )
+    if presentation.preferred_graph_names:
+        # Allocate stable identities before applying the display order.
+        priority = {
+            name: index for index, name in enumerate(presentation.preferred_graph_names)
+        }
+        generated.sort(
+            key=lambda item: priority.get(view_name(item.hierarchy), len(priority))
         )
     return generated
 
@@ -439,7 +474,7 @@ def _entity_hierarchy_model_stem(model_stem: str, graph_name: str) -> str:
 
 
 def _entity_hierarchy_graph_name(backend_kinds: tuple[str, ...]) -> str:
-    """Return the generated graph name for a backend hierarchy path."""
+    """Name the visible hierarchy, preserving main's names for source views."""
     if not backend_kinds:
         return "entity_hierarchy"
     return _safe_filename("_".join(backend_kinds)).replace("-", "_")
@@ -449,6 +484,8 @@ def _entity_hierarchy_graph(
     graph: dict[str, Any],
     generated_graph_ids: dict[str, str],
     source_operator_paths_by_node_id: dict[str, tuple[str, ...]],
+    *,
+    presentation: _HierarchyPresentation = _HierarchyPresentation(),
 ) -> tuple[dict[str, Any], dict[str, tuple[str, ...]]]:
     """Clone one graph, splitting multi-path source nodes into sub-operators."""
     source_graph_id = graph.get("id")
@@ -462,9 +499,7 @@ def _entity_hierarchy_graph(
         )
 
     source_nodes = [
-        node
-        for node in (graph.get("nodes", []) or [])
-        if isinstance(node, dict)
+        node for node in (graph.get("nodes", []) or []) if isinstance(node, dict)
     ]
     source_node_ids: set[str] = set()
     for node in source_nodes:
@@ -552,6 +587,10 @@ def _entity_hierarchy_graph(
     cloned = _without_none(_jsonable(graph))
     cloned["id"] = generated_graph_id
     cloned["nodes"] = cloned_nodes
+    if presentation.group_node_configs is not None:
+        cloned["groupNodeConfigs"] = _without_none(
+            _jsonable(presentation.group_node_configs)
+        )
     for node in cloned_nodes:
         if "subgraphIds" not in node:
             continue
@@ -714,6 +753,8 @@ def _source_model_with_entity_namespaces(
     graph_name: str,
     collection_label: str,
     source_operator_to_node_ids: dict[str, list[_NodeRef]],
+    *,
+    presentation: _HierarchyPresentation = _HierarchyPresentation(),
 ) -> _HierarchyGraphCollection:
     """Return one result's hierarchy graph and explicit canonical correspondence."""
     graph_collection = _without_none(_jsonable(source_graph_collection))
@@ -726,6 +767,7 @@ def _source_model_with_entity_namespaces(
         entities,
         hierarchy,
         stats_bearing_entity_ids,
+        presentation=presentation,
     )
 
     source_operator_by_ref: dict[_NodeRef, str] = {}
@@ -767,6 +809,7 @@ def _source_model_with_entity_namespaces(
             graph,
             generated_graph_ids,
             source_paths_by_node_id,
+            presentation=presentation,
         )
         generated_graphs.append(generated_graph)
         generated_graph_id = str(generated_graph["id"])
@@ -836,9 +879,7 @@ def _source_model_with_entity_namespaces(
             entity_id: tuple(dict.fromkeys(node_refs))
             for entity_id, node_refs in group_refs_by_entity_id.items()
         },
-        terminal_complete_path_group_refs=frozenset(
-            terminal_complete_path_group_refs
-        ),
+        terminal_complete_path_group_refs=frozenset(terminal_complete_path_group_refs),
     )
     return _HierarchyGraphCollection(graph_collection, projection)
 
@@ -873,9 +914,7 @@ def _entity_namespace_component_with_id(
         display_name.replace(";", "%3B") if preserve_hierarchy else display_name
     )
     suffix = (
-        f" [{safe_entity_id}]"
-        if attempt == 1
-        else f" [{safe_entity_id} entity-id]"
+        f" [{safe_entity_id}]" if attempt == 1 else f" [{safe_entity_id} entity-id]"
     )
     return _escape_entity_namespace_component(f"{safe_display_name}{suffix}")
 
@@ -1072,6 +1111,8 @@ def _entity_hierarchy_complete_paths(
     entities_by_id: dict[str, dict[str, Any]],
     hierarchy: _EntityKindHierarchy,
     stats_bearing_entity_ids: set[str],
+    *,
+    presentation: _HierarchyPresentation = _HierarchyPresentation(),
 ) -> _HierarchyPathProjection:
     """Enumerate and render every complete ancestry path in one hierarchy."""
     lineages_by_entity_id = {
@@ -1082,6 +1123,29 @@ def _entity_hierarchy_complete_paths(
         if _entity_kind(entity) == _SOURCE_OPERATOR_KIND
         or _entity_belongs_to_hierarchy(entity, hierarchy)
     }
+
+    # A source can retain a direct chain association alongside a more precise
+    # compiled-operator association. Render the latter once for that same chain.
+    # Compare canonical ancestry IDs so unrelated chains and recursive paths stay.
+    for entity_id, lineages in lineages_by_entity_id.items():
+        if (
+            not presentation.prefer_specific_source_lineages
+            or _entity_kind(entities_by_id[entity_id]) != _SOURCE_OPERATOR_KIND
+        ):
+            continue
+        lineages_by_entity_id[entity_id] = tuple(
+            lineage
+            for lineage in lineages
+            if not any(
+                len(other) > len(lineage)
+                and other[: len(lineage) - 1] == lineage[:-1]
+                and all(
+                    _entity_kind(entities_by_id[ancestor]) in presentation.hidden_kinds
+                    for ancestor in other[len(lineage) - 1 : -1]
+                )
+                for other in lineages
+            )
+        )
 
     component_display_by_prefix: dict[tuple[str, ...], str] = {}
     component_entity_id_by_prefix: dict[tuple[str, ...], str] = {}
@@ -1097,10 +1161,12 @@ def _entity_hierarchy_complete_paths(
                 current_entity = entities_by_id[current_id]
                 if not _entity_belongs_to_hierarchy(current_entity, hierarchy):
                     continue
+                # Compiler identities support cross-view mapping, but source
+                # hierarchy leaves belong directly beneath the measured chain.
+                if _entity_kind(current_entity) in presentation.hidden_kinds:
+                    continue
                 current_name = _entity_display_name(current_entity)
-                if not _include_entity_namespace(
-                    current_id, stats_bearing_entity_ids
-                ):
+                if not _include_entity_namespace(current_id, stats_bearing_entity_ids):
                     hidden_ancestor_names.append(current_name)
                     continue
                 prefix = lineage[: index + 1]
@@ -1118,13 +1184,55 @@ def _entity_hierarchy_complete_paths(
                 )
             component_prefixes_by_lineage[lineage] = tuple(component_prefixes)
 
+    namespace_by_prefix = _allocate_entity_namespace_paths(
+        component_display_by_prefix,
+        component_entity_id_by_prefix,
+        component_prefixes_by_lineage,
+    )
+
+    def lineage_namespace(lineage: tuple[str, ...]) -> str:
+        prefixes = component_prefixes_by_lineage.get(lineage, ())
+        if not prefixes:
+            return ""
+        return namespace_by_prefix[prefixes[-1]]
+
+    entity_paths_by_id: dict[str, tuple[str, ...]] = {}
+    source_operator_paths_by_id: dict[str, tuple[str, ...]] = {}
+    for entity_id, lineages in lineages_by_entity_id.items():
+        entity = entities_by_id[entity_id]
+        paths = tuple(
+            sorted(
+                {
+                    namespace
+                    for lineage in lineages
+                    for namespace in [lineage_namespace(lineage)]
+                    if namespace
+                }
+            )
+        )
+        if _entity_kind(entity) == _SOURCE_OPERATOR_KIND:
+            source_operator_paths_by_id[entity_id] = paths
+        elif (
+            _entity_kind(entity) not in presentation.hidden_kinds
+        ) and _include_entity_namespace(entity_id, stats_bearing_entity_ids):
+            entity_paths_by_id[entity_id] = paths
+    return _HierarchyPathProjection(
+        entity_paths_by_id=entity_paths_by_id,
+        source_operator_paths_by_id=source_operator_paths_by_id,
+    )
+
+
+def _allocate_entity_namespace_paths(
+    component_display_by_prefix: dict[tuple[str, ...], str],
+    component_entity_id_by_prefix: dict[tuple[str, ...], str],
+    component_prefixes_by_lineage: dict[tuple[str, ...], tuple[tuple[str, ...], ...]],
+) -> dict[tuple[str, ...], str]:
+    """Allocate unique display paths from canonical lineages, including collisions."""
     attempts = dict.fromkeys(component_display_by_prefix, 0)
     while True:
         component_by_prefix = {
             prefix: (
-                _escape_entity_namespace_component(
-                    component_display_by_prefix[prefix]
-                )
+                _escape_entity_namespace_component(component_display_by_prefix[prefix])
                 if attempts[prefix] == 0
                 else _entity_namespace_component_with_id(
                     component_display_by_prefix[prefix],
@@ -1160,18 +1268,20 @@ def _entity_hierarchy_complete_paths(
         allocation_prefixes: set[tuple[str, ...]] = set()
         for conflict_group in conflict_groups:
             component_sequences = [
-                component_prefixes_by_lineage[prefix]
-                for prefix in conflict_group
+                component_prefixes_by_lineage[prefix] for prefix in conflict_group
             ]
             max_common = min(len(sequence) for sequence in component_sequences)
             allocation_index = max_common - 1
             for candidate_index in range(max_common - 1, -1, -1):
-                if len(
-                    {
-                        sequence[candidate_index][-1]
-                        for sequence in component_sequences
-                    }
-                ) > 1:
+                if (
+                    len(
+                        {
+                            sequence[candidate_index][-1]
+                            for sequence in component_sequences
+                        }
+                    )
+                    > 1
+                ):
                     allocation_index = candidate_index
                     break
             for sequence in component_sequences:
@@ -1190,35 +1300,7 @@ def _entity_hierarchy_complete_paths(
             )
         for prefix in allocation_prefixes:
             attempts[prefix] = min(attempts[prefix] + 1, 3)
-
-    def lineage_namespace(lineage: tuple[str, ...]) -> str:
-        prefixes = component_prefixes_by_lineage.get(lineage, ())
-        if not prefixes:
-            return ""
-        return namespace_by_prefix[prefixes[-1]]
-
-    entity_paths_by_id: dict[str, tuple[str, ...]] = {}
-    source_operator_paths_by_id: dict[str, tuple[str, ...]] = {}
-    for entity_id, lineages in lineages_by_entity_id.items():
-        entity = entities_by_id[entity_id]
-        paths = tuple(
-            sorted(
-                {
-                    namespace
-                    for lineage in lineages
-                    for namespace in [lineage_namespace(lineage)]
-                    if namespace
-                }
-            )
-        )
-        if _entity_kind(entity) == _SOURCE_OPERATOR_KIND:
-            source_operator_paths_by_id[entity_id] = paths
-        elif _include_entity_namespace(entity_id, stats_bearing_entity_ids):
-            entity_paths_by_id[entity_id] = paths
-    return _HierarchyPathProjection(
-        entity_paths_by_id=entity_paths_by_id,
-        source_operator_paths_by_id=source_operator_paths_by_id,
-    )
+    return namespace_by_prefix
 
 
 def _entity_complete_lineages(
@@ -1333,3 +1415,30 @@ def _include_entity_namespace(
         not _ONLY_SHOW_STATS_BEARING_ENTITY_NAMESPACES
         or entity_id in stats_bearing_entity_ids
     )
+
+
+def _additional_entity_kind_hierarchies(
+    result: dict[str, Any],
+    presentation: _HierarchyPresentation,
+) -> list[_EntityKindHierarchy]:
+    """Add format presentation views supported by the result's relationships."""
+    metadata = _entity_kind_metadata_by_id(result.get("entity_kinds", []))
+    parents_by_child = _entity_kind_parents_by_child(metadata)
+    present_kinds = {
+        kind
+        for entity in (result.get("entities", []) or [])
+        for kind in [_entity_kind(entity)]
+        if kind is not None
+    }
+    return [
+        _EntityKindHierarchy(
+            path,
+            frozenset(kind for kind in path if kind in parents_by_child.get(kind, [])),
+        )
+        for path in presentation.additional_hierarchy_paths
+        if set(path) <= present_kinds
+        and all(
+            parent in parents_by_child.get(child, [])
+            for parent, child in zip(path, path[1:])
+        )
+    ]

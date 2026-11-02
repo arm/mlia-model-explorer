@@ -42,6 +42,7 @@ nav:
   - Plugin Integration: plugin_integration.md
   - End-to-end Execution Flow: execution_flow.md
   - Usage: usage.md
+  - ETRecord Profiling: etrecord.md
   - Python API: api.md
   - Artifacts: artifacts.md
   - Model Adapters: adapters.md

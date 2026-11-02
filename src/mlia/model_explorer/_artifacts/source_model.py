@@ -20,7 +20,7 @@ from .source_mapping import _source_operator_node_ids
 
 _SOURCE_MODEL_COLLECTION_LABEL = "Source Model"
 
-_ADAPTERS_BY_SUFFIX = {
+_ADAPTERS_BY_SUFFIX: dict[str, dict[str, Any]] = {
     ".pt2": {
         "module": "model_explorer.builtin_pytorch_exportedprogram_adapter",
         "extra": "",
@@ -58,7 +58,19 @@ _ADAPTERS_BY_SUFFIX = {
         "extra": "tosa",
         "package": "tosa-adapter-model-explorer",
     },
+    ".etrecord": {
+        "module": "etrecord_adapter_model_explorer.main",
+        "extra": "executorch",
+        "package": "etrecord-adapter-model-explorer",
+    },
+    ".bin": {
+        "module": "etrecord_adapter_model_explorer.main",
+        "extra": "executorch",
+        "package": "etrecord-adapter-model-explorer",
+        "adapter_suffix": ".etrecord",
+    },
 }
+
 
 def _empty_output(result: AnalysisRunResult) -> dict[str, Any]:
     model_path = _model_path(result)
@@ -142,7 +154,9 @@ def _copy_model(model_path: Path | None, root: Path) -> Path | None:
 
 
 def _write_source_model_files(
-    model_path: Path | None, root: Path
+    model_path: Path | None,
+    root: Path,
+    output: dict[str, Any] | None = None,
 ) -> _SourceModelArtifacts:
     """Write Model Explorer JSON for the source model when an adapter is known."""
     if model_path is None:
@@ -161,12 +175,19 @@ def _write_source_model_files(
     path = model_dir / f"{_safe_filename(model_path.stem)}-source.json"
     adapter_response = _run_model_explorer_adapter(model_path, adapter_info)
     graph_collection = _source_model_graph_collection(model_path, adapter_response)
+    from .formats import _format_integration
+
+    mapping_options = (
+        {"output": output} if _format_integration(model_path).has_source_mapping else {}
+    )
     source_operator_to_node_ids = _source_operator_node_ids(
-        model_path, graph_collection
+        model_path, graph_collection, **mapping_options
     )
     _write_json(path, graph_collection)
     return _SourceModelArtifacts(
-        [path], graph_collection, source_operator_to_node_ids
+        [path],
+        graph_collection,
+        source_operator_to_node_ids,
     )
 
 
@@ -180,7 +201,8 @@ def _run_model_explorer_adapter(
     except Exception as err:  # pylint: disable=broad-exception-caught
         raise RuntimeError(_adapter_import_error_message(adapter_info, err)) from err
 
-    adapter_class = _adapter_class(module, model_path.suffix)
+    adapter_suffix = adapter_info.get("adapter_suffix", model_path.suffix)
+    adapter_class = _adapter_class(module, adapter_suffix)
     if adapter_class is None:
         raise RuntimeError(
             f"Model Explorer adapter module {module_name} does not provide an "
@@ -225,8 +247,7 @@ def _adapter_import_error_message(adapter_info: dict[str, Any], err: Exception) 
     return (
         "Model Explorer needs an adapter package for this model file, but it "
         f"could not be imported:\n\n  {adapter_info['module']}\n"
-        f"  {type(err).__name__}: {err}\n\n"
-        + "\n".join(install_lines)
+        f"  {type(err).__name__}: {err}\n\n" + "\n".join(install_lines)
     )
 
 
@@ -236,31 +257,17 @@ def _source_model_graph_collection(
     """Convert adapter output to MLIA's source graph collection shape."""
     # Model Explorer adapters are not completely uniform: some return a
     # top-level ``graphs`` list, while others return one or more
-    # ``graphCollections``. MLIA writes one source graph collection artifact and
-    # later uses the collection label as the stable model-name discriminator for
-    # node-data overlays. Normalize all adapter shapes to that single artifact
-    # and always use MLIA's source label so empty or adapter-specific labels do
-    # not make overlays unmatchable or unstable.
-    graph_collections = adapter_response.get("graphCollections") or []
-    if graph_collections:
-        if len(graph_collections) != 1:
-            # Graph IDs are scoped by collection, and nodes can link to other
-            # graphs through subgraphIds. Supporting multiple collections would
-            # require preserving that scope or renaming graph IDs while rewriting
-            # every graph reference and all downstream mappings/node data. Reject
-            # the unsupported shape rather than flattening it ambiguously.
-            labels = [
-                str(collection.get("label") or "<unnamed>")
-                if isinstance(collection, dict)
-                else "<invalid>"
-                for collection in graph_collections
-            ]
+    # ``graphCollections``. Source-collection selection is owned by the format
+    # integration; ordinary adapters retain the single-collection contract.
+    live_graph_collection = _source_adapter_graph_collection(
+        model_path, adapter_response
+    )
+    if live_graph_collection is not None:
+        graph_collection = _without_none(_jsonable(live_graph_collection))
+        if not isinstance(graph_collection, dict):
             raise RuntimeError(
-                "Model Explorer adapter returned multiple graph collections; "
-                "mlia-model-explorer currently requires exactly one. "
-                f"Returned collections: {', '.join(labels)}."
+                "Model Explorer adapter returned an invalid graph collection."
             )
-        graph_collection = _without_none(_jsonable(graph_collections[0]))
         graph_collection["label"] = _SOURCE_MODEL_COLLECTION_LABEL
         return graph_collection
 
@@ -286,10 +293,25 @@ def _without_none(value: Any) -> Any:
     """Recursively omit None values from adapter output."""
     if isinstance(value, dict):
         return {
-            key: _without_none(item)
-            for key, item in value.items()
-            if item is not None
+            key: _without_none(item) for key, item in value.items() if item is not None
         }
     if isinstance(value, list):
         return [_without_none(item) for item in value]
     return value
+
+
+def _source_adapter_graph_collection(
+    model_path: Path, adapter_response: dict[str, Any]
+) -> Any | None:
+    """Select the analyzed collection through its format integration."""
+    from .formats import _format_integration
+
+    return _format_integration(model_path).source_collection(
+        model_path, adapter_response
+    )
+
+
+def _graph_collection_label(graph_collection: Any) -> str:
+    if isinstance(graph_collection, dict):
+        return str(graph_collection.get("label") or "")
+    return str(getattr(graph_collection, "label", "") or "")

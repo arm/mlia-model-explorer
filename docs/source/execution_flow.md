@@ -38,7 +38,8 @@ sequenceDiagram
    SHA-256 hash match standardized-output metadata.
 2. The matching adapter converts the model to a single source graph collection.
    Format-specific logic maps standardized source-operator IDs to qualified graph
-   node references.
+   node references. The selected private format integration can also contribute
+   supplementary graphs and their metric and navigation references.
 3. Each applicable result-local entity-kind hierarchy becomes a generated graph
    collection. Canonical source correspondence is retained while nodes are split
    or grouped into runtime namespaces.
@@ -47,7 +48,8 @@ sequenceDiagram
    across synthetic children when that would imply false per-node values.
 5. Sync-navigation and entity-node mappings are produced from the explicit graph
    projections. JSON serialization rejects non-finite numeric values.
-6. `manifest.json` records the artifact paths and overlay-to-collection routing.
+6. `manifest.json` records the artifact paths and overlay-to-collection routing,
+   with an optional preferred graph reference supplied by the format integration.
 7. The bundler embeds the referenced graph collections, node data, navigation
    data, host configuration, and vendored JavaScript into one HTML file.
 
@@ -59,5 +61,8 @@ skipped and MLIA-derived artifacts can still be emitted. If a model is present
 but its format or identity mapping is unsupported, generation fails explicitly.
 
 The initial browser view prefers the generated graph with the greatest valid
-node-data coverage beside the source graph. If only one graph collection exists,
-the right-pane control remains hidden.
+node-data coverage beside the source graph for ordinary inputs. ETRecord supplies
+an explicit preference for its compact chain-mapping graph when present. Display
+names do not affect pane selection. If only one graph collection
+exists, the right-pane control remains hidden. ETRecord source selection and
+optional companion projection are described in [ETRecord profiling](etrecord.md).

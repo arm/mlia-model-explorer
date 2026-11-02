@@ -975,15 +975,18 @@ def test_cross_parent_runtime_collisions_stay_distinct_across_all_artifacts(
     cycles = _read_json(
         generated.root / "node-data" / "model-hierarchy-outer_inner" / "cycles.json"
     )
-    _ASSERT.assertEqual(
-        cycles["outer_inner-main"]["results"],
-        {
-            "parent1": {"value": 1},
-            "parent1/x%3Bshared [child%2F1]": {"value": 10},
-            "parent2": {"value": 2},
-            "parent2/y%3Bshared [child%3B2]": {"value": 20},
+    assert cycles["outer_inner-main"]["results"] == {
+        "parent1": {"value": 1, "bgColor": "#a0ffb0"},
+        "parent1/x%3Bshared [child%2F1]": {
+            "value": 10,
+            "bgColor": "#a0ffb0",
         },
-    )
+        "parent2": {"value": 2, "bgColor": "#ff8888"},
+        "parent2/y%3Bshared [child%3B2]": {
+            "value": 20,
+            "bgColor": "#ff8888",
+        },
+    }
     reordered_cycles = _read_json(
         reordered.root / "node-data" / "model-hierarchy-outer_inner" / "cycles.json"
     )

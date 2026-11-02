@@ -58,6 +58,53 @@ class _SourceModelArtifacts:
 
 
 @dataclass(frozen=True)
+class _HierarchyPresentation:
+    """Format-independent options for the common hierarchy projection."""
+
+    hidden_kinds: frozenset[str] = frozenset()
+    prefer_specific_source_lineages: bool = False
+    collection_labels: dict[str, str] = field(default_factory=dict)
+    group_node_configs: list[dict[str, Any]] | None = None
+    #: Unqualified hierarchy names to place first, preserving all other order.
+    preferred_graph_names: tuple[str, ...] = ()
+    #: Extra views to present when all kinds and declared relationships exist.
+    additional_hierarchy_paths: tuple[tuple[str, ...], ...] = ()
+
+
+@dataclass(frozen=True)
+class _MetricPresentation:
+    """Browser table presentation, independent of canonical metric aggregation."""
+
+    hidden_statistics_by_metric: dict[str, tuple[str, ...]] = field(
+        default_factory=dict
+    )
+    #: Use the full result's range for each entity kind, including subset views.
+    normalize_colors_across_views: bool = False
+
+
+@dataclass(frozen=True)
+class _GraphContribution:
+    """One supplementary graph and its distinct metric/navigation targets."""
+
+    path: Path
+    graph_collection: dict[str, Any]
+    metric_refs: dict[tuple[int, str], tuple[_NodeRef, ...]] = field(
+        default_factory=dict
+    )
+    sync_refs: dict[tuple[int, str], tuple[_NodeRef, ...]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class _SupplementaryArtifacts:
+    """Format contributions consumed by the shared artifact writer."""
+
+    graphs: list[_GraphContribution] = field(default_factory=list)
+    sync_entity_refs: dict[tuple[int, str], tuple[_NodeRef, ...]] = field(
+        default_factory=dict
+    )
+
+
+@dataclass(frozen=True)
 class _NodeDataArtifact:
     """Generated Model Explorer node-data artifact and its logical overlay."""
 
@@ -184,10 +231,9 @@ class _OverlayKey:
 
 @dataclass(frozen=True)
 class _LogicalOverlay:
-    """Graph-independent overlay data with resolved presentation."""
+    """Graph-independent overlay data awaiting a shared display name."""
 
     key: _OverlayKey
-    display_name: str
     node_data: dict[str, Any]
 
 

@@ -19,6 +19,8 @@ from .models import _NodeRef
 def _source_operator_node_ids(
     model_path: Path,
     graph_collection: dict[str, Any],
+    *,
+    output: dict[str, Any] | None = None,
 ) -> dict[str, list[_NodeRef]]:
     """Construct canonical source-operator identities from native adapter metadata.
 
@@ -42,6 +44,11 @@ def _source_operator_node_ids(
         return _spirv_source_operator_node_ids(graph_collection)
     if suffix == ".vgf":
         return _vgf_source_operator_node_ids(graph_collection)
+    from .formats import _format_integration
+
+    integration = _format_integration(model_path)
+    if integration.has_source_mapping:
+        return integration.source_operator_refs(model_path, graph_collection, output)
     raise UnsupportedConfigurationError(
         "Model Explorer does not support source-operator mapping for model "
         f"format '{suffix or '<none>'}'."
@@ -473,4 +480,3 @@ def _node_string_attr(node: dict[str, Any], key: str) -> str | None:
         ):
             return attr["value"]
     return None
-

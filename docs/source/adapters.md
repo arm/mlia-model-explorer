@@ -19,14 +19,22 @@ are therefore separate requirements.
 | `.onnx` | `mlia-model-explorer[onnx]` | Correlates top-level ONNX nodes through name, output tensors, and operation labels, requiring a complete one-to-one match. | Supported with restrictions |
 | `.spv` | `mlia-model-explorer[spirv]` | Uses native SPIR-V result-ID metadata exposed by the adapter. | Supported |
 | `.vgf` | `mlia-model-explorer[vgf]` | Combines VGF segment identity with native SPIR-V result-ID metadata. | Supported |
+| `.etrecord`, `.bin` | `mlia-model-explorer[executorch]` | Uses method-qualified ETRecord source identities and measured-output compiler associations. | Supported for ETRecord profiling |
+| Companion `.pte` | `mlia-model-explorer[executorch]` | Consumes analyzed method/instruction/segment/SPIR-V identities; requires matching structural IDs from the adapter. | VGF companion only; see [ETRecord profiling](etrecord.md) |
 | `.tosa` | `mlia-model-explorer[tosa]` | No verified native source-operator identity contract is implemented. | Not yet supported end to end |
+
+PTE visualization is available through `--companion-model` with an ETRecord input.
+Standalone `.pte` inputs are not supported; they are rejected before adapter
+execution because no primary-PTE source-identity mapping is implemented.
 
 ## Common adapter requirements
 
-Adapter output must normalize to exactly one graph collection. Multiple graph
-collections are rejected because flattening them could collide graph IDs or break
-subgraph references. Within the accepted collection, graph and node IDs used for
-mapping must be valid and unambiguous.
+For non-ETRecord inputs, adapter output must normalize to exactly one graph
+collection. Multiple graph collections are rejected because flattening them
+could collide graph IDs or break subgraph references. ETRecord adapters may also
+return recorded deployable and delegate collections; the plugin explicitly
+selects one identifiable ETRecord source collection. Within the accepted
+collection, graph and node IDs used for mapping must be valid and unambiguous.
 
 The source graph collection is always relabeled `Source Model`; this stable label
 is used to route node-data overlays and qualify mapping references.

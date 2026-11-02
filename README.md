@@ -50,3 +50,28 @@ mode additionally opens that page in the default browser.
 Generated artifacts are written under `mlia-output/model-explorer/`. The
 standalone HTML page is written to `mlia-output/model-explorer/bundle/index.html`.
 It can be opened directly from `file://` without separate runtime or data files.
+
+## ExecuTorch ETRecord profiling
+
+Use the matching ETRecord and ETDump to visualize source runtime timings and,
+when captured, VGF cycle measurements. An optional matching PTE adds its compiler
+graph. This workflow requires MLIA with the ExecuTorch extras installed:
+
+```bash
+uv run --with "mlia-neural-technology[executorch]" \
+  --with "mlia-model-explorer[executorch]" \
+  mlia check model.etrecord \
+  --target-profile neural-technology \
+  --performance \
+  --profiling-data model.etdump \
+  --companion-model model.pte \
+  --model-explorer open
+```
+
+Only `.pte` companions with VGF content and matching captured VGF profiling are
+currently supported. Omit `--companion-model` when no companion graph is needed.
+Use `--model-explorer files` to generate the visualization without opening it.
+See [ETRecord profiling](docs/source/etrecord.md) for method selection,
+available views and measurement limitations. Companion input is also available
+through the Python API; clients without a companion-model selector can use the
+CLI or Python API for this workflow.

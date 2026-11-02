@@ -86,8 +86,18 @@ def _bundle_data(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
         manifest.get("node_data", []),
     )
     sync_navigation = _read_optional_json(root, manifest.get("sync_navigation"))
-    initial_ui_state = _initial_ui_state(graph_collections, node_data_provider_runs)
-    selected_node_data = _selected_node_data(node_data_provider_runs)
+    presentation = manifest.get("presentation")
+    preferred_graph = (
+        presentation.get("preferred_right_pane")
+        if isinstance(presentation, dict)
+        else None
+    )
+    initial_ui_state = _initial_ui_state(
+        graph_collections, node_data_provider_runs, preferred_graph=preferred_graph
+    )
+    selected_node_data = _selected_node_data(
+        node_data_provider_runs, manifest.get("nodeDataOverlayKeysAndDisplayNames")
+    )
 
     visualizer_config: dict[str, Any] = {
         "hideTitleBar": True,
@@ -217,6 +227,8 @@ def _node_data_provider_run_name(
 def _initial_ui_state(
     graph_collections: list[dict[str, Any]],
     node_data_provider_runs: list[dict[str, Any]],
+    *,
+    preferred_graph: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     if len(graph_collections) < 2:
         return None
@@ -231,12 +243,30 @@ def _initial_ui_state(
     if source_graph is None or not generated_graphs:
         return None
 
-    selected_generated_graph, _ = max(
-        generated_graphs,
-        key=lambda candidate: _node_data_provider_run_coverage(
-            candidate[1], node_data_provider_runs
+    selected_generated_graph = next(
+        (
+            {
+                "graph_id": graph["id"],
+                "collection_label": str(collection.get("label") or ""),
+            }
+            for collection in graph_collections[1:]
+            if isinstance(preferred_graph, dict)
+            and str(collection.get("label") or "")
+            == preferred_graph.get("collectionLabel")
+            for graph in collection.get("graphs", []) or []
+            if isinstance(graph, dict)
+            and isinstance(graph.get("id"), str)
+            and graph["id"] == preferred_graph.get("graphId")
         ),
+        None,
     )
+    if selected_generated_graph is None:
+        selected_generated_graph, _ = max(
+            generated_graphs,
+            key=lambda candidate: _node_data_provider_run_coverage(
+                candidate[1], node_data_provider_runs
+            ),
+        )
     initial_graphs = [source_graph, selected_generated_graph]
     width_fraction = 1.0 / len(initial_graphs)
     return {
@@ -287,23 +317,38 @@ def _graph_node_data_value_coverage(
 
 def _selected_node_data(
     node_data_provider_runs: list[dict[str, Any]],
+    overlay_metadata: object = None,
 ) -> list[dict[str, str]]:
-    selected: list[dict[str, str]] = []
-    collection_labels = sorted(
-        {
-            collection_label
-            for run in node_data_provider_runs
-            for collection_label in [run.get("collectionLabel")]
-            if isinstance(collection_label, str) and collection_label
-        }
-    )
-    for collection_label in collection_labels:
-        for default_name in _DEFAULT_SELECTED_NODE_DATA_NAMES:
-            if any(
-                run.get("collectionLabel") == collection_label
-                and default_name in _effective_node_data_provider_run_names(run)
-                for run in node_data_provider_runs
+    # Qualifiers and unit disambiguation change display names. Use the recorded
+    # metric identity while preserving exact-name defaults for older manifests.
+    metadata = overlay_metadata if isinstance(overlay_metadata, list) else []
+    default_names = []
+    for metric_name in _DEFAULT_SELECTED_NODE_DATA_NAMES:
+        default_names.append(metric_name)
+        for overlay in metadata:
+            if not isinstance(overlay, dict):
+                continue
+            key = overlay.get("overlayKey")
+            display_name = overlay.get("displayName")
+            if (
+                isinstance(key, dict)
+                and key.get("category") == "metric"
+                and key.get("name") == metric_name
+                and isinstance(display_name, str)
+                and display_name
             ):
+                default_names.append(display_name)
+    names_by_collection: dict[str, set[str]] = {}
+    for run in node_data_provider_runs:
+        collection_label = run.get("collectionLabel")
+        if isinstance(collection_label, str) and collection_label:
+            names_by_collection.setdefault(collection_label, set()).update(
+                _effective_node_data_provider_run_names(run)
+            )
+    selected: list[dict[str, str]] = []
+    for collection_label, names in sorted(names_by_collection.items()):
+        for default_name in default_names:
+            if default_name in names:
                 # Model Explorer's current public input calls the graph collection
                 # label "modelName". Keep that API-boundary spelling until the
                 # upstream input is renamed independently.

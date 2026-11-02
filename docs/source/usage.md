@@ -21,11 +21,15 @@ separate adapter, for example:
 python -m pip install "mlia-model-explorer[onnx]"
 python -m pip install "mlia-model-explorer[spirv]"
 python -m pip install "mlia-model-explorer[vgf]"
+python -m pip install "mlia-model-explorer[executorch]"
 ```
 
 See [Model Adapters](adapters.md) before choosing an extra; installing an adapter
 does not by itself guarantee that this plugin has a verified source-identity
 mapping for the format.
+
+The [ETRecord profiling guide](etrecord.md) adds measured ETDump commands,
+method selection and an optional PTE companion to the workflows below.
 
 ## Generate a standalone visualization
 
@@ -48,8 +52,8 @@ can be moved or opened directly with a `file://` URL.
 
 ## Interpreting the view
 
-When both are available, the initial layout shows the source model beside the
-generated MLIA hierarchy with the richest overlay coverage. Select placement,
+For ordinary inputs, when both are available, the initial layout shows the source
+model beside the generated MLIA hierarchy with the richest overlay coverage. Select placement,
 status, metric, check, or advice overlays from the node-data controls. Synchronized
 navigation uses explicit mappings so selecting related nodes across graph panes
 does not depend on coincidentally matching node IDs.

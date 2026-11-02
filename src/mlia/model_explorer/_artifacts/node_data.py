@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -34,6 +35,7 @@ from .models import (
     _CanonicalQualifiers,
     _GeneratedModelArtifact,
     _LogicalOverlay,
+    _MetricPresentation,
     _NodeAnnotation,
     _NodeDataArtifact,
     _NodeRef,
@@ -46,57 +48,11 @@ from .serialization import (
     _write_json,
 )
 
-
-def _write_node_data_files(
-    output: dict[str, Any],
-    node_data_dir: Path,
-    directory_names_by_collection: dict[str, str],
-    generated_artifacts_by_result: dict[int, list[_GeneratedModelArtifact]],
-    source_graph_collection: dict[str, Any] | None,
-    source_operator_to_node_ids: dict[str, list[_NodeRef]],
-) -> list[_NodeDataArtifact]:
-    results = output.get("results", [])
-    if not isinstance(results, list):
-        results = []
-
-    artifacts: list[_NodeDataArtifact] = []
-    collection_directories: dict[str, Path] = {}
-    allocated_filenames_by_collection: dict[str, set[str]] = {}
-    logical_overlays = _node_data_overlays(
-        results,
-        generated_artifacts_by_result,
-        source_graph_collection,
-        source_operator_to_node_ids,
-    )
-    for overlay in logical_overlays:
-        graph_data_by_collection = _collection_scoped_node_data(
-            overlay.display_name, overlay.node_data
-        )
-        for collection_label, graph_data in graph_data_by_collection.items():
-            if collection_label not in collection_directories:
-                collection_directory = (
-                    node_data_dir / directory_names_by_collection[collection_label]
-                )
-                collection_directory.mkdir(parents=True, exist_ok=True)
-                collection_directories[collection_label] = collection_directory
-            filename = _allocate_safe_filename(
-                overlay.display_name,
-                allocated_filenames_by_collection.setdefault(collection_label, set()),
-            )
-            path = collection_directories[collection_label] / (
-                f"{filename}{_NODE_DATA_FILENAME_EXTENSION}"
-            )
-            _write_json(path, graph_data)
-            artifacts.append(
-                _NodeDataArtifact(
-                    path,
-                    graph_collection_label=collection_label,
-                    overlay_key=overlay.key,
-                    display_name=overlay.display_name,
-                )
-            )
-
-    return artifacts
+_METRIC_GRADIENT_STOPS = (
+    (0.0, (160, 255, 176)),
+    (0.5, (255, 248, 85)),
+    (1.0, (255, 136, 136)),
+)
 
 
 def _collection_scoped_node_data(
@@ -274,8 +230,11 @@ def _node_data_overlays(
     generated_artifacts_by_result: dict[int, list[_GeneratedModelArtifact]],
     source_graph_collection: dict[str, Any] | None,
     source_operator_to_node_ids: dict[str, list[_NodeRef]],
+    *,
+    presentation: _MetricPresentation = _MetricPresentation(),
 ) -> list[_LogicalOverlay]:
     overlays: dict[_OverlayKey, dict[_NodeRef, dict[str, Any]]] = {}
+    metric_kinds_by_node_ref: dict[_OverlayKey, dict[_NodeRef, set[str]]] = {}
     text_overlays: dict[_OverlayKey, dict[_NodeRef, _NodeAnnotation]] = {}
     for result_index, result in enumerate(results):
         if not isinstance(result, dict):
@@ -311,9 +270,7 @@ def _node_data_overlays(
             for entity in entities_by_id.values()
             if _is_node_overlay_entity(entity)
         ]
-        namespace_refs_by_entity_id = _result_entity_namespace_refs(
-            generated_artifacts
-        )
+        namespace_refs_by_entity_id = _result_entity_namespace_refs(generated_artifacts)
         (
             source_namespace_breakdowns,
             source_namespace_entities,
@@ -338,6 +295,7 @@ def _node_data_overlays(
         )
         _add_breakdown_metric_overlays(
             overlays,
+            metric_kinds_by_node_ref,
             result_index,
             result_kind,
             [
@@ -365,6 +323,23 @@ def _node_data_overlays(
             overlay_node_ids_by_entity,
         )
 
+    hierarchy_collection_labels = {
+        artifact.descriptor.collection_label
+        for generated_artifacts in generated_artifacts_by_result.values()
+        for artifact in generated_artifacts
+    }
+    _apply_level_metric_colors(
+        overlays,
+        metric_kinds_by_node_ref,
+        hierarchy_collection_labels,
+        force_single_level_colors=presentation.normalize_colors_across_views,
+        color_ranges=(
+            _canonical_metric_color_ranges(results)
+            if presentation.normalize_colors_across_views
+            else None
+        ),
+    )
+
     for overlay_key, entries in text_overlays.items():
         if entries:
             overlays[overlay_key] = {
@@ -376,12 +351,12 @@ def _node_data_overlays(
         (overlay_key for overlay_key, entries in overlays.items() if entries),
         key=_overlay_sort_key,
     )
-    display_names = _overlay_display_names(ordered_keys)
     return [
         _LogicalOverlay(
             overlay_key,
-            display_names[overlay_key],
-            _graph_node_data(overlay_key, overlays[overlay_key]),
+            _graph_node_data(
+                overlay_key, overlays[overlay_key], presentation=presentation
+            ),
         )
         for overlay_key in ordered_keys
     ]
@@ -496,6 +471,7 @@ def _add_entity_overlays(
 
 def _add_breakdown_metric_overlays(
     overlays: dict[_OverlayKey, dict[_NodeRef, dict[str, Any]]],
+    metric_kinds_by_node_ref: dict[_OverlayKey, dict[_NodeRef, set[str]]],
     result_index: int,
     result_kind: str,
     breakdowns: list[Any],
@@ -503,6 +479,26 @@ def _add_breakdown_metric_overlays(
     namespace_refs_by_entity_id: dict[str, list[_NodeRef]],
     entity_node_ids: dict[str, list[_NodeRef]],
 ) -> None:
+    for overlay_key, entity, value in _breakdown_metric_values(
+        result_index, result_kind, breakdowns, entities_by_id
+    ):
+        _add_entity_node_data_result(
+            overlays.setdefault(overlay_key, {}),
+            entity,
+            value,
+            namespace_refs_by_entity_id=namespace_refs_by_entity_id,
+            node_ids=entity_node_ids.get(_entity_id(entity), []),
+            kinds_by_node_ref=metric_kinds_by_node_ref.setdefault(overlay_key, {}),
+        )
+
+
+def _breakdown_metric_values(
+    result_index: int,
+    result_kind: str,
+    breakdowns: list[Any],
+    entities_by_id: dict[str, dict[str, Any]],
+) -> Iterator[tuple[_OverlayKey, dict[str, Any], object]]:
+    """Read canonical metric identities consistently for overlays and colours."""
     for breakdown in breakdowns:
         if not isinstance(breakdown, dict):
             continue
@@ -537,13 +533,7 @@ def _add_breakdown_metric_overlays(
                 breakdown_qualifiers=breakdown_qualifiers,
                 metric_qualifiers=metric_qualifiers,
             )
-            _add_entity_node_data_result(
-                overlays.setdefault(overlay_key, {}),
-                entity,
-                metric.get("value"),
-                namespace_refs_by_entity_id=namespace_refs_by_entity_id,
-                node_ids=entity_node_ids.get(_entity_id(entity), []),
-            )
+            yield overlay_key, entity, metric["value"]
 
 
 def _add_check_overlay(
@@ -624,6 +614,8 @@ def _check_reason_messages(check: dict[str, Any]) -> list[str]:
 def _graph_node_data(
     overlay_key: _OverlayKey,
     entries: dict[_NodeRef, dict[str, Any]],
+    *,
+    presentation: _MetricPresentation = _MetricPresentation(),
 ) -> dict[str, Any]:
     data: dict[str, Any] = {
         "results": {
@@ -634,10 +626,12 @@ def _graph_node_data(
         "showLabelCountColumnsInChildrenStatsTable": True,
     }
     if overlay_key.category == "metric":
-        data["gradient"] = [
-            {"stop": 0, "bgColor": "#2e7d32"},
-            {"stop": 1, "bgColor": "#c62828"},
-        ]
+        data["gradient"] = _metric_gradient_definition()
+        hidden_statistics = presentation.hidden_statistics_by_metric.get(
+            overlay_key.name
+        )
+        if hidden_statistics:
+            data["hideAggregatedStats"] = list(hidden_statistics)
     return data
 
 
@@ -682,6 +676,7 @@ def _add_entity_node_data_result(
     *,
     namespace_refs_by_entity_id: dict[str, list[_NodeRef]],
     node_ids: list[_NodeRef],
+    kinds_by_node_ref: dict[_NodeRef, set[str]] | None = None,
 ) -> None:
     entity_id = entity.get("id")
     namespace_refs = (
@@ -689,11 +684,12 @@ def _add_entity_node_data_result(
         if isinstance(entity_id, str)
         else []
     )
-    if namespace_refs:
-        for namespace_ref in namespace_refs:
-            _add_raw_node_data_value(entries, namespace_ref, value)
-        return
-    _add_raw_node_data_result(entries, node_ids, value)
+    target_refs = namespace_refs or node_ids
+    entity_kind = _entity_kind(entity)
+    for node_ref in target_refs:
+        _add_raw_node_data_value(entries, node_ref, value)
+        if kinds_by_node_ref is not None and entity_kind is not None:
+            kinds_by_node_ref.setdefault(node_ref, set()).add(entity_kind)
 
 
 def _add_raw_node_data_value(
@@ -1086,3 +1082,237 @@ def _severity_color(severity: str) -> str:
         "error": "#c62828",
     }
     return colors.get(severity.lower(), "#757575")
+
+
+def _write_logical_node_data_files(
+    logical_overlays: list[_LogicalOverlay],
+    node_data_dir: Path,
+    directory_names_by_collection: dict[str, str],
+) -> list[_NodeDataArtifact]:
+    display_names = _overlay_display_names(
+        sorted({overlay.key for overlay in logical_overlays}, key=_overlay_sort_key)
+    )
+    artifacts: list[_NodeDataArtifact] = []
+    collection_directories: dict[str, Path] = {}
+    allocated_filenames_by_collection: dict[str, set[str]] = {}
+    for overlay in logical_overlays:
+        display_name = display_names[overlay.key]
+        graph_data_by_collection = _collection_scoped_node_data(
+            display_name, overlay.node_data
+        )
+        for collection_label, graph_data in graph_data_by_collection.items():
+            if collection_label not in collection_directories:
+                collection_directory = (
+                    node_data_dir / directory_names_by_collection[collection_label]
+                )
+                collection_directory.mkdir(parents=True, exist_ok=True)
+                collection_directories[collection_label] = collection_directory
+            filename = _allocate_safe_filename(
+                display_name,
+                allocated_filenames_by_collection.setdefault(collection_label, set()),
+            )
+            path = collection_directories[collection_label] / (
+                f"{filename}{_NODE_DATA_FILENAME_EXTENSION}"
+            )
+            _write_json(path, graph_data)
+            artifacts.append(
+                _NodeDataArtifact(
+                    path,
+                    graph_collection_label=collection_label,
+                    overlay_key=overlay.key,
+                    display_name=display_name,
+                )
+            )
+
+    return artifacts
+
+
+def _entity_metric_overlays(
+    output: dict[str, Any],
+    refs_by_entity: dict[tuple[int, str], tuple[_NodeRef, ...]],
+    collection_labels: set[str],
+    *,
+    presentation: _MetricPresentation = _MetricPresentation(),
+) -> list[_LogicalOverlay]:
+    """Project canonical metrics onto supplementary graph entity references."""
+    if not refs_by_entity:
+        return []
+    overlays: dict[_OverlayKey, dict[_NodeRef, dict[str, Any]]] = {}
+    metric_kinds_by_node_ref: dict[_OverlayKey, dict[_NodeRef, set[str]]] = {}
+    results = output.get("results", [])
+    if not isinstance(results, list):
+        return []
+    for result_index, result in enumerate(results):
+        if not isinstance(result, dict):
+            continue
+        result_kind = str(result.get("kind") or "result")
+        entities_by_id = _entities_by_id(result)
+        entity_refs: dict[str, list[_NodeRef]] = {}
+        for (ref_result_index, entity_id), refs in refs_by_entity.items():
+            if ref_result_index == result_index:
+                _append_unique_items(entity_refs.setdefault(entity_id, []), list(refs))
+        _add_breakdown_metric_overlays(
+            overlays,
+            metric_kinds_by_node_ref,
+            result_index,
+            result_kind,
+            result.get("breakdowns", []) or [],
+            entities_by_id,
+            entity_refs,
+            entity_refs,
+        )
+
+    _apply_level_metric_colors(
+        overlays,
+        metric_kinds_by_node_ref,
+        collection_labels,
+        force_single_level_colors=True,
+        color_ranges=(
+            _canonical_metric_color_ranges(results)
+            if presentation.normalize_colors_across_views
+            else None
+        ),
+    )
+
+    ordered_keys = sorted(overlays, key=_overlay_sort_key)
+    logical_overlays = []
+    for overlay_key in ordered_keys:
+        data = _graph_node_data(
+            overlay_key, overlays[overlay_key], presentation=presentation
+        )
+        # Parent and child groups can describe overlapping observations.
+        # Browser sums across hierarchy levels would count them repeatedly.
+        data["hideAggregatedStats"] = list(
+            dict.fromkeys([*data.get("hideAggregatedStats", []), "sum"])
+        )
+        logical_overlays.append(_LogicalOverlay(overlay_key, data))
+    return logical_overlays
+
+
+def _metric_gradient_definition() -> list[dict[str, int | float | str]]:
+    return [
+        {
+            "stop": stop,
+            "bgColor": "#" + "".join(f"{channel:02x}" for channel in color),
+        }
+        for stop, color in _METRIC_GRADIENT_STOPS
+    ]
+
+
+def _apply_level_metric_colors(
+    overlays: dict[_OverlayKey, dict[_NodeRef, dict[str, Any]]],
+    metric_kinds_by_node_ref: dict[_OverlayKey, dict[_NodeRef, set[str]]],
+    hierarchy_collection_labels: set[str],
+    *,
+    force_single_level_colors: bool = False,
+    color_ranges: dict[tuple[_OverlayKey, str], tuple[float, float]] | None = None,
+) -> None:
+    """Normalize each hierarchy kind, optionally sharing ranges across views."""
+    for overlay_key, kinds_by_node_ref in metric_kinds_by_node_ref.items():
+        entries = overlays.get(overlay_key, {})
+        values_by_level: dict[tuple[str, str], list[float]] = {}
+        for node_ref, kinds in kinds_by_node_ref.items():
+            if node_ref.collection_label not in hierarchy_collection_labels:
+                continue
+            entry = entries.get(node_ref)
+            if entry is None:
+                continue
+            value = entry.get("value")
+            if (
+                len(kinds) != 1
+                or isinstance(value, bool)
+                or not isinstance(value, int | float)
+            ):
+                continue
+            level = (node_ref.collection_label, next(iter(kinds)))
+            values_by_level.setdefault(level, []).append(float(value))
+
+        if not values_by_level or (
+            len(values_by_level) == 1 and not force_single_level_colors
+        ):
+            continue
+
+        ranges_by_level = {
+            level: (color_ranges or {}).get(
+                (overlay_key, level[1]), (min(values), max(values))
+            )
+            for level, values in values_by_level.items()
+        }
+        for node_ref, kinds in kinds_by_node_ref.items():
+            if node_ref.collection_label not in hierarchy_collection_labels:
+                continue
+            entry = entries.get(node_ref)
+            if entry is None:
+                continue
+            value = entry.get("value")
+            if (
+                len(kinds) != 1
+                or isinstance(value, bool)
+                or not isinstance(value, int | float)
+            ):
+                continue
+            level = (node_ref.collection_label, next(iter(kinds)))
+            minimum, maximum = ranges_by_level[level]
+            entry["bgColor"] = _metric_gradient_color(float(value), minimum, maximum)
+
+
+def _canonical_metric_color_ranges(
+    results: list[Any],
+) -> dict[tuple[_OverlayKey, str], tuple[float, float]]:
+    """Keep a hierarchy entity's colour stable when a view shows only a subset."""
+    ranges: dict[tuple[_OverlayKey, str], tuple[float, float]] = {}
+    for result_index, result in enumerate(results):
+        if not isinstance(result, dict):
+            continue
+        entities = _entities_by_id(result)
+        values_by_entity: dict[tuple[_OverlayKey, str], object] = {}
+        for overlay_key, entity, value in _breakdown_metric_values(
+            result_index,
+            str(result.get("kind") or "result"),
+            result.get("breakdowns", []) or [],
+            entities,
+        ):
+            key = (overlay_key, _entity_id(entity))
+            values_by_entity[key] = (
+                _merge_raw_node_data_values(values_by_entity[key], value)
+                if key in values_by_entity
+                else value
+            )
+        for (overlay_key, entity_id), value in values_by_entity.items():
+            kind = _entity_kind(entities[entity_id])
+            if (
+                kind is None
+                or isinstance(value, bool)
+                or not isinstance(value, int | float)
+            ):
+                continue
+            key = (overlay_key, kind)
+            minimum, maximum = ranges.get(key, (float(value), float(value)))
+            ranges[key] = (min(minimum, value), max(maximum, value))
+    return ranges
+
+
+def _metric_gradient_color(value: float, minimum: float, maximum: float) -> str:
+    position = 0.0
+    if maximum > minimum:
+        position = min(1.0, max(0.0, (value - minimum) / (maximum - minimum)))
+
+    start_stop, start_color = _METRIC_GRADIENT_STOPS[0]
+    end_stop, end_color = _METRIC_GRADIENT_STOPS[-1]
+    for candidate_start, candidate_end in zip(
+        _METRIC_GRADIENT_STOPS,
+        _METRIC_GRADIENT_STOPS[1:],
+    ):
+        if position <= candidate_end[0]:
+            start_stop, start_color = candidate_start
+            end_stop, end_color = candidate_end
+            break
+
+    local_position = 0.0
+    if end_stop > start_stop:
+        local_position = (position - start_stop) / (end_stop - start_stop)
+    channels = (
+        round(start + local_position * (end - start))
+        for start, end in zip(start_color, end_color)
+    )
+    return "#" + "".join(f"{channel:02x}" for channel in channels)

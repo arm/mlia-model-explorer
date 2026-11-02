@@ -34,6 +34,7 @@ The generated site is written to `.mkdocs/site/`.
 - The `source/plugin_integration.md` page covers MLIA discovery and invocation.
 - The `source/execution_flow.md` page follows the conversion and bundle flow.
 - The `source/usage.md` page covers installation, commands, and troubleshooting.
+- The `source/etrecord.md` page covers ETRecord profiling views and PTE companions.
 - The `source/api.md` page documents the supported Python artifact API.
 - The `source/artifacts.md` page explains the generated file layout and behavior.
 - The `source/adapters.md` page lists model-format adapters and mapping limitations.

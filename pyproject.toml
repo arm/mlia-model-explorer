@@ -15,7 +15,7 @@ description = "ML Inference Advisor Model Explorer Plugin"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mlia==0.12.3",
+    "mlia>=0.13.0,<0.14",
     # Python adapter/conversion API only. The compatible browser runtime is the
     # vendored embedded visualizer documented in README.md.
     "ai-edge-model-explorer>=0.1.32,<0.2"
@@ -37,10 +37,17 @@ spirv = ["spirv-adapter-model-explorer"]
 vgf = ["vgf-adapter-model-explorer"]
 tosa = ["tosa-adapter-model-explorer"]
 onnx = ["model-explorer-onnx>=0.4.2,<0.5"]
+executorch = [
+    "etrecord-adapter-model-explorer",
+    "pte-adapter-model-explorer",
+    "vgf-adapter-model-explorer>=0.5.1",
+]
 adapters = [
     "spirv-adapter-model-explorer",
-    "vgf-adapter-model-explorer",
+    "vgf-adapter-model-explorer>=0.5.1",
     "tosa-adapter-model-explorer",
+    "etrecord-adapter-model-explorer",
+    "pte-adapter-model-explorer",
     "model-explorer-onnx>=0.4.2,<0.5",
 ]
 
