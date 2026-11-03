@@ -90,7 +90,7 @@ jobs:
           method: approle
           roleId: ${{ secrets.VAULT_ROLE_ID }}
           secretId: ${{ secrets.VAULT_SECRET_ID }}
-          namespace: iac-expkits/prod
+          namespace: ${{ vars.VAULT_NAMESPACE }}
           secrets: |
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | INTERNAL_PYPI_USERNAME ;

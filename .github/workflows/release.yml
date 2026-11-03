@@ -62,14 +62,14 @@ jobs:
     runs-on: ["${{ vars.UBUNTU_RUNNER }}", "X64"]
     steps:
       - name: Import secrets from Vault
-        if: ${{ github.repository_owner != 'arm' }}
+        if: ${{ github.repository_owner == 'Arm-Debug' && github.actor != 'dependabot[bot]' }}
         uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4
         with:
           url: ${{ secrets.VAULT_URL }}
           method: approle
           roleId: ${{ secrets.VAULT_ROLE_ID }}
           secretId: ${{ secrets.VAULT_SECRET_ID }}
-          namespace: iac-expkits/prod
+          namespace: ${{ vars.VAULT_NAMESPACE }}
           secrets: |
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | UV_INDEX_INTERNAL_USERNAME ;
@@ -132,7 +132,7 @@ jobs:
           path: coverage.xml
       - name: Create wheel SBOM
         run: |
-          python -m pip install --index-url https://pypi.org/simple cyclonedx-bom==7.3.0
+          uv pip install --system --default-index https://pypi.org/simple cyclonedx-bom==7.3.0
           python -m venv --clear .sbom-venv
           uv pip install --python .sbom-venv/bin/python dist/*.whl
           mkdir -p sbom
@@ -212,18 +212,27 @@ jobs:
       id-token: write
     steps:
       - name: Import secrets from Vault
-        if: ${{ github.repository_owner != 'arm' }}
+        if: ${{ github.repository_owner == 'Arm-Debug' && github.actor != 'dependabot[bot]' }}
         uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4
         with:
           url: ${{ secrets.VAULT_URL }}
           method: approle
           roleId: ${{ secrets.VAULT_ROLE_ID }}
           secretId: ${{ secrets.VAULT_SECRET_ID }}
-          namespace: iac-expkits/prod
+          namespace: ${{ vars.VAULT_NAMESPACE }}
           secrets: |
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_HOST | UV_PUBLISH_URL ;
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_USERNAME | UV_PUBLISH_USERNAME ;
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} PUBLISH_PYPI_PASSWORD | UV_PUBLISH_PASSWORD
+
+      - name: Check internal publishing configuration
+        if: ${{ github.repository_owner != 'arm' }}
+        shell: bash
+        run: |
+          if [[ -z "${UV_PUBLISH_URL:-}" ]]; then
+            echo "Set PUBLISH_PYPI_HOST in Vault before publishing to Artifactory." >&2
+            exit 1
+          fi
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -282,17 +291,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Create release token
-        if: ${{ github.repository_owner == 'arm' }}
-        uses: getsentry/action-github-app-token@d4b5da6c5e37703f8c3b3e43abb5705b46e159cc # v3.0.0
-        id: get_app_token
-        with:
-          app_id: ${{ secrets.ME_REPO_ACCESS_APP_ID }}
-          private_key: ${{ secrets.ME_REPO_ACCESS_PRIVATE_KEY }}
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-          token: ${{ github.repository_owner == 'arm' && steps.get_app_token.outputs.token || github.token }}
+          token: ${{ github.token }}
           persist-credentials: false
       - name: Generate release notes
         uses: orhun/git-cliff-action@d77b37db2e3f7398432d34b72a12aa3e2ba87e51 # v4.6.0
@@ -302,7 +304,7 @@ jobs:
           args: --latest
         env:
           OUTPUT: CHANGELOG.md
-          GITHUB_TOKEN: ${{ github.repository_owner == 'arm' && steps.get_app_token.outputs.token || github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPO: ${{ github.repository }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -322,7 +324,7 @@ jobs:
           files: |
             dist/*
             sbom/*.json
-          token: ${{ github.repository_owner == 'arm' && steps.get_app_token.outputs.token || github.token }}
+          token: ${{ github.token }}
 
   sync-commits-to-public-repo:
     name: Sync commits to public repo

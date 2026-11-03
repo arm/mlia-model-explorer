@@ -27,14 +27,17 @@ jobs:
     runs-on: ["${{ vars.UBUNTU_RUNNER }}", "X64"]
     steps:
       - name: Import secrets from Vault
-        if: ${{ github.repository_owner != 'arm' }}
+        if: >-
+          github.repository_owner == 'Arm-Debug' &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+          github.actor != 'dependabot[bot]'
         uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4
         with:
           url: ${{ secrets.VAULT_URL }}
           method: approle
           roleId: ${{ secrets.VAULT_ROLE_ID }}
           secretId: ${{ secrets.VAULT_SECRET_ID }}
-          namespace: iac-expkits/prod
+          namespace: ${{ vars.VAULT_NAMESPACE }}
           secrets: |
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | UV_INDEX_INTERNAL_USERNAME ;
@@ -63,14 +66,17 @@ jobs:
     runs-on: ["${{ vars.UBUNTU_RUNNER }}", "X64"]
     steps:
       - name: Import secrets from Vault
-        if: ${{ github.repository_owner != 'arm' }}
+        if: >-
+          github.repository_owner == 'Arm-Debug' &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+          github.actor != 'dependabot[bot]'
         uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4
         with:
           url: ${{ secrets.VAULT_URL }}
           method: approle
           roleId: ${{ secrets.VAULT_ROLE_ID }}
           secretId: ${{ secrets.VAULT_SECRET_ID }}
-          namespace: iac-expkits/prod
+          namespace: ${{ vars.VAULT_NAMESPACE }}
           secrets: |
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | UV_INDEX_INTERNAL_USERNAME ;
@@ -94,14 +100,17 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Import secrets from Vault
-        if: ${{ github.repository_owner != 'arm' }}
+        if: >-
+          github.repository_owner == 'Arm-Debug' &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+          github.actor != 'dependabot[bot]'
         uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4
         with:
           url: ${{ secrets.VAULT_URL }}
           method: approle
           roleId: ${{ secrets.VAULT_ROLE_ID }}
           secretId: ${{ secrets.VAULT_SECRET_ID }}
-          namespace: iac-expkits/prod
+          namespace: ${{ vars.VAULT_NAMESPACE }}
           secrets: |
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} UV_DEFAULT_INDEX | UV_DEFAULT_INDEX ;
             kv/data/MLIA/CI?version=${{ vars.VAULT_CI_SECRET_VERSION || '0' }} INTERNAL_PYPI_USERNAME | UV_INDEX_INTERNAL_USERNAME ;
