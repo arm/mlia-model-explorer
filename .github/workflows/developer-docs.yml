@@ -9,17 +9,15 @@ on:
       - 'docs/**'
       - '.github/workflows/developer-docs.yml'
   push:
-    branches: [main]
-    paths:
-      - 'docs/**'
-      - '.github/workflows/developer-docs.yml'
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: developer-docs-${{ github.ref }}
+  group: developer-docs-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -34,6 +32,8 @@ jobs:
       docs-root: docs/source
       site-id: mlia-model-explorer
       runs-on: ${{ vars.UBUNTU_RUNNER || '["ubuntu-24.04-arm"]' }}
-      publish: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+      publish: >-
+        ${{ github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) }}
       aws-role-arn: arn:aws:iam::529607359382:role/Proj-GHA-mlia-model-explorer-s3-upload
       environment: staging
