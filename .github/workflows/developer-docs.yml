@@ -27,9 +27,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: Arm-Debug/github-workflow-wizardry/.github/workflows/developer-docs.yml@9c5bcc48a076050402690aaae25c8bf644a04492
+    uses: Arm-Debug/github-workflow-wizardry/.github/workflows/developer-docs.yml@4e9ad6627c08032ed5b312d7a78746390ecaebcc
     with:
       docs-root: docs/source
+      docs-config: docs/docs-config.json
       site-id: mlia-model-explorer
       runs-on: ${{ vars.UBUNTU_RUNNER || '["ubuntu-24.04-arm"]' }}
       publish: >-
