@@ -1,0 +1,15 @@
+{
+  "siteLabel": "MLIA Model Explorer Plugin",
+  "navbarItems": [
+    {
+      "label": "Documentation",
+      "to": "/",
+      "position": "left"
+    },
+    {
+      "label": "MLIA Core",
+      "to": "https://developer.arm.com/dev-docs/mlia/",
+      "position": "right"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: Copyright 2026, Arm Limited and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Developer documentation
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '.github/workflows/developer-docs.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/developer-docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: developer-docs-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  developer-docs:
+    name: Validate and publish developer docs
+    if: github.repository_owner == 'Arm-Debug'
+    permissions:
+      contents: read
+      id-token: write
+    uses: Arm-Debug/github-workflow-wizardry/.github/workflows/developer-docs.yml@9c5bcc48a076050402690aaae25c8bf644a04492
+    with:
+      docs-root: docs/source
+      site-id: mlia-model-explorer
+      runs-on: ${{ vars.UBUNTU_RUNNER || '["ubuntu-24.04-arm"]' }}
+      publish: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+      aws-role-arn: arn:aws:iam::529607359382:role/Proj-GHA-mlia-model-explorer-s3-upload
+      environment: staging

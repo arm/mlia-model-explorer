@@ -15,6 +15,8 @@ page is self-contained and does not start the Python Model Explorer web server.
 
 ## Documentation
 
+[Read the documentation on Arm Developer](https://developer.arm.com/dev-docs/mlia-model-explorer/).
+
 Structured documentation lives in [docs/README.md](docs/README.md). Start with:
 
 - [Usage](docs/source/usage.md) for installation, CLI modes, and troubleshooting.
