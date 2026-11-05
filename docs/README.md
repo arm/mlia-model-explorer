@@ -58,8 +58,8 @@ make -C docs preview CONTAINER_ENGINE=podman
 For Docker, use `make -C docs preview`. Open <http://localhost:3000/>.
 The image builds locally and requires access to the documentation package feed
 and npm registry. It mounts the docs read-only and includes `docs-config.json`.
-Edits to existing pages are visible in the preview; restart after adding
-new top-level pages or changing navigation configuration.
+Page edits and new pages are synchronized into the preview automatically.
+Restart after changing navigation configuration.
 
 Alternatively, with a Compose provider installed:
 

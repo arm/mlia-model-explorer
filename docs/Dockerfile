@@ -8,7 +8,7 @@ ENV NPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY} \
     PNPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY}
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates rsync \
     && echo "deb [trusted=yes] https://artifacts.tools.arm.com/tools-deb bionic main" > /etc/apt/sources.list.d/arm-docs.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends arm-docs-github-action=0.12.1 \
