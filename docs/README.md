@@ -47,6 +47,30 @@ MLIA configuration and standardized-output schema details belong in the core
 MLIA documentation; Model Explorer adapter internals belong in their owning
 projects.
 
+## Developer site preview
+
+From the repository root, build and start the local preview with Podman:
+
+```bash
+make -C docs preview CONTAINER_ENGINE=podman
+```
+
+For Docker, use `make -C docs preview`. Open <http://localhost:3000/>.
+The image builds locally and requires access to the documentation package feed
+and npm registry. It mounts the docs read-only and includes `docs-config.json`.
+Edits to existing pages are visible in the preview; restart after adding
+new top-level pages or changing navigation configuration.
+
+Alternatively, with a Compose provider installed:
+
+```bash
+podman compose -p mlia-model-explorer-docs -f docs/compose.yaml up --build
+```
+
+Use `docker compose` for Docker. Stop the Compose preview with `compose down`
+using the same project name and file. The MkDocs `build` and `serve` commands above remain
+available for the GitHub Pages site.
+
 ## Published documentation
 
 [Read the documentation on Arm Developer](https://developer.arm.com/dev-docs/mlia-model-explorer/).

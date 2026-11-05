@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright 2026, Arm Limited and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+
+services:
+  docs:
+    image: localhost/mlia-docs-preview:0.12.1
+    build:
+      context: .
+      args:
+        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://artifactory.arm.com/artifactory/api/npm/mirrors.npmjs_org}
+    command: ["--site-id", "mlia-model-explorer"]
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - .:/workspace/docs:ro
+    stdin_open: true
+    tty: true
