@@ -1,0 +1,69 @@
+{
+  "title": "Model Explorer",
+  "headline": "Put results in context.",
+  "lead": "Explore model structure alongside MLIA analysis overlays in a standalone HTML visualization.",
+  "category": "Post-analysis plugin",
+  "start": "/usage",
+  "focus": [
+    {
+      "title": "Create a visualization",
+      "description": "Generate files or open an interactive local view.",
+      "to": "/usage"
+    },
+    {
+      "title": "Check model support",
+      "description": "Review adapters, source-identity mapping, and limitations.",
+      "to": "/adapters"
+    },
+    {
+      "title": "Explore the artifacts",
+      "description": "Understand the generated graph, overlays, and HTML bundle.",
+      "to": "/artifacts"
+    }
+  ],
+  "note": "Adapter availability and verified source-identity mapping are separate requirements. Check the support matrix.",
+  "learning": null,
+  "repository": "https://github.com/arm/mlia-model-explorer",
+  "guides": [
+    {
+      "title": "High-level Architecture",
+      "to": "/high_level_architecture"
+    },
+    {
+      "title": "Python API",
+      "to": "/api"
+    },
+    {
+      "title": "ETRecord profiling views",
+      "to": "/etrecord"
+    },
+    {
+      "title": "Usage",
+      "to": "/usage"
+    },
+    {
+      "title": "Artifacts",
+      "to": "/artifacts"
+    },
+    {
+      "title": "Plugin Integration",
+      "to": "/plugin_integration"
+    },
+    {
+      "title": "End-to-end Execution Flow",
+      "to": "/execution_flow"
+    },
+    {
+      "title": "Overview",
+      "to": "/overview"
+    },
+    {
+      "title": "Development",
+      "to": "/development"
+    },
+    {
+      "title": "Model Adapters",
+      "to": "/adapters"
+    }
+  ]
+}

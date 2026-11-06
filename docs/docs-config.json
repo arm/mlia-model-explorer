@@ -2,8 +2,13 @@
   "siteLabel": "MLIA Model Explorer Plugin",
   "navbarItems": [
     {
-      "label": "Documentation",
+      "label": "Home",
       "to": "/",
+      "position": "left"
+    },
+    {
+      "label": "Documentation",
+      "to": "/documentation",
       "position": "left"
     },
     {
@@ -11,5 +16,6 @@
       "to": "https://developer.arm.com/dev-docs/mlia/",
       "position": "right"
     }
-  ]
+  ],
+  "indexPageDirectory": "landing-page"
 }

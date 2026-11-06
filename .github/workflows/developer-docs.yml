@@ -12,6 +12,15 @@ on:
     tags:
       - 'v*.*.*'
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Documentation destination for a manual publication
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+        required: true
 
 permissions:
   contents: read
@@ -21,7 +30,40 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  destination:
+    name: Select documentation destination
+    if: github.repository_owner == 'Arm-Debug'
+    runs-on: ${{ fromJson(vars.UBUNTU_RUNNER || '["ubuntu-24.04-arm"]') }}
+    outputs:
+      environment: ${{ steps.select.outputs.environment }}
+      aws-account: ${{ steps.select.outputs.aws-account }}
+    steps:
+      - name: Select release environment
+        id: select
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          MANUAL_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          destination=staging
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            destination=$MANUAL_ENVIRONMENT
+          elif [[ "$EVENT_NAME" == push && "$REF_TYPE" == tag && "$REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            destination=production
+          fi
+          case "$destination" in
+            staging) account=529607359382 ;;
+            production) account=930800959236 ;;
+            *) echo "Unknown documentation environment: $destination" >&2; exit 1 ;;
+          esac
+          echo "environment=$destination" >> "$GITHUB_OUTPUT"
+          echo "aws-account=$account" >> "$GITHUB_OUTPUT"
+
   developer-docs:
+    needs: destination
     name: Validate and publish developer docs
     if: github.repository_owner == 'Arm-Debug'
     permissions:
@@ -36,5 +78,5 @@ jobs:
       publish: >-
         ${{ github.event_name == 'workflow_dispatch' ||
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) }}
-      aws-role-arn: arn:aws:iam::529607359382:role/Proj-GHA-mlia-model-explorer-s3-upload
-      environment: staging
+      aws-role-arn: arn:aws:iam::${{ needs.destination.outputs.aws-account }}:role/Proj-GHA-mlia-model-explorer-s3-upload
+      environment: ${{ needs.destination.outputs.environment }}
