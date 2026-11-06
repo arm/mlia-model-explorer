@@ -59,7 +59,7 @@ jobs:
 
   build_and_test_wheel:
     name: Build And Test Wheel
-    runs-on: ["${{ vars.UBUNTU_RUNNER }}", "X64"]
+    runs-on: ${{ vars.UBUNTU_RUNNER }}
     steps:
       - name: Import secrets from Vault
         if: ${{ github.repository_owner == 'Arm-Debug' && github.actor != 'dependabot[bot]' }}
