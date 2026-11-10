@@ -1,7 +1,9 @@
-<!---
-SPDX-FileCopyrightText: Copyright 2026, Arm Limited and/or its affiliates.
-SPDX-License-Identifier: Apache-2.0
---->
+---
+# SPDX-FileCopyrightText: Copyright 2026, Arm Limited and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+sidebar_position: 1
+slug: /documentation
+---
 
 # MLIA Model Explorer Plugin
 
@@ -24,3 +26,6 @@ architecture behind the visualization.
 - The [Artifacts](artifacts.md) page explains generated files and behavior.
 - The [Model Adapters](adapters.md) page lists format support and limitations.
 - The [Development](development.md) page provides contributor guidance.
+
+For shared CLI, installation, and plugin architecture guidance, see the
+[MLIA core documentation](https://developer.arm.com/dev-docs/mlia/).

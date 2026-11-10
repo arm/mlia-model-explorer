@@ -46,3 +46,7 @@ The site documents this plugin and the contracts it consumes from MLIA. General
 MLIA configuration and standardized-output schema details belong in the core
 MLIA documentation; Model Explorer adapter internals belong in their owning
 projects.
+
+## Published documentation
+
+[Read the documentation on Arm Developer](https://developer.arm.com/dev-docs/mlia-model-explorer/).

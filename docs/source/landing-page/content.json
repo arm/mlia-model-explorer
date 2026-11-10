@@ -1,0 +1,99 @@
+{
+  "title": "Model Explorer",
+  "headline": "Put results in context.",
+  "lead": "Explore model structure alongside MLIA analysis overlays in a standalone HTML visualization.",
+  "category": "Post-analysis plugin",
+  "start": "/usage",
+  "focus": [
+    {
+      "title": "Create a visualization",
+      "description": "Generate files or open an interactive local view.",
+      "to": "/usage"
+    },
+    {
+      "title": "Check model support",
+      "description": "Review adapters, source-identity mapping, and limitations.",
+      "to": "/adapters"
+    },
+    {
+      "title": "Explore the artifacts",
+      "description": "Understand the generated graph, overlays, and HTML bundle.",
+      "to": "/artifacts"
+    }
+  ],
+  "note": "Adapter availability and verified source-identity mapping are separate requirements. Check the support matrix.",
+  "learning": null,
+  "repository": "https://github.com/arm/mlia-model-explorer",
+  "guides": [
+    {
+      "title": "High-level Architecture",
+      "to": "/high_level_architecture"
+    },
+    {
+      "title": "Python API",
+      "to": "/api"
+    },
+    {
+      "title": "ETRecord profiling views",
+      "to": "/etrecord"
+    },
+    {
+      "title": "Usage",
+      "to": "/usage"
+    },
+    {
+      "title": "Artifacts",
+      "to": "/artifacts"
+    },
+    {
+      "title": "Plugin Integration",
+      "to": "/plugin_integration"
+    },
+    {
+      "title": "End-to-end Execution Flow",
+      "to": "/execution_flow"
+    },
+    {
+      "title": "Overview",
+      "to": "/overview"
+    },
+    {
+      "title": "Development",
+      "to": "/development"
+    },
+    {
+      "title": "Model Adapters",
+      "to": "/adapters"
+    }
+  ],
+  "panels": {
+    "startTitle": "Create your first visualization.",
+    "startDescription": "Choose a supported model format, install the required adapter, and generate a standalone HTML view from your MLIA analysis.",
+    "startLinks": [
+      {
+        "label": "Generate a visualization",
+        "to": "/usage"
+      },
+      {
+        "label": "Check model support",
+        "to": "/adapters"
+      }
+    ],
+    "resultsTitle": "Read your model and results together.",
+    "resultsDescription": "Understand the graph, analysis overlays, and generated artifacts. Use the API when you want to integrate visualization into your own workflow.",
+    "resultsLinks": [
+      {
+        "label": "Understand the output",
+        "to": "/artifacts"
+      },
+      {
+        "label": "Follow the execution flow",
+        "to": "/execution_flow"
+      },
+      {
+        "label": "Use the Python API",
+        "to": "/api"
+      }
+    ]
+  }
+}

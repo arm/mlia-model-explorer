@@ -10,8 +10,26 @@ docs_dir: docs/source
 site_dir: .mkdocs/site
 strict: true
 
+exclude_docs: |
+  /landing-page/
+
+hooks:
+  - docs/scripts/landing.py
+
 theme:
   name: material
+  custom_dir: docs/overrides
+  palette:
+    - media: '(prefers-color-scheme: light)'
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: '(prefers-color-scheme: dark)'
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
   features:
     - navigation.sections
     - navigation.top
@@ -37,6 +55,7 @@ extra_javascript:
 
 nav:
   - Home: index.md
+  - Documentation: documentation.md
   - Overview: overview.md
   - High-level Architecture: high_level_architecture.md
   - Plugin Integration: plugin_integration.md
