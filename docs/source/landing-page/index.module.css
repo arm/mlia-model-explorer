@@ -87,12 +87,6 @@
   );
 }
 
-.diagram {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
 .actions {
   display: flex;
   align-items: center;
@@ -275,44 +269,6 @@
   flex-wrap: wrap;
   gap: 0.75rem 1.5rem;
   margin-top: 1.4rem;
-}
-.codePanel {
-  background: var(--mlia-panel);
-  border: 1px solid var(--mlia-border);
-  border-radius: 1rem;
-  overflow: hidden;
-  min-width: 0;
-  box-shadow: 0 12px 36px rgb(8 2 37 / 5%);
-}
-.codeHeader {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  border-bottom: 1px solid var(--mlia-border);
-  color: var(--mlia-muted);
-  padding: 1rem 1.2rem;
-  font-size: 0.75rem;
-}
-.codeDots {
-  display: flex;
-  gap: 0.3rem;
-}
-.codeDots i {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: var(--mlia-border);
-}
-.codePanel > div:last-child {
-  border: 0;
-  border-radius: 0;
-  margin: 0;
-  box-shadow: none;
-}
-.codePanel pre {
-  padding: 1.4rem;
-  font-size: 0.9rem;
-  line-height: 1.9;
 }
 
 .sectionHeader {
@@ -790,4 +746,60 @@
 :global(html[data-theme="dark"]) .surface {
   background: #080225;
   color-scheme: dark;
+}
+
+.linkIndicator {
+  display: inline-block;
+  flex-shrink: 0;
+  font-size: 1rem;
+  line-height: 1;
+  margin-left: 0.4rem;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.pluginSection.taskPanel {
+  background: var(--mlia-surface);
+  border: 1px solid var(--mlia-border);
+  border-radius: 0.75rem;
+  padding: 2rem;
+}
+.workspace.pairedPanels {
+  align-items: stretch;
+}
+.pairedPanels .startSection {
+  border: 1px solid var(--mlia-border);
+}
+.panelDescription {
+  color: var(--mlia-ink);
+  line-height: 1.7;
+  margin-bottom: 1.5rem;
+}
+.panelLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem 1.2rem;
+  margin-top: 1.5rem;
+}
+.panelLinks a {
+  color: var(--mlia-accent);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+@media (max-width: 640px) {
+  .pluginSection.taskPanel {
+    padding: 1.5rem;
+  }
+}
+
+.guideDirectory {
+  margin-top: 3rem;
 }

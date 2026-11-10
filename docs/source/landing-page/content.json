@@ -65,5 +65,35 @@
       "title": "Model Adapters",
       "to": "/adapters"
     }
-  ]
+  ],
+  "panels": {
+    "startTitle": "Create your first visualization.",
+    "startDescription": "Choose a supported model format, install the required adapter, and generate a standalone HTML view from your MLIA analysis.",
+    "startLinks": [
+      {
+        "label": "Generate a visualization",
+        "to": "/usage"
+      },
+      {
+        "label": "Check model support",
+        "to": "/adapters"
+      }
+    ],
+    "resultsTitle": "Read your model and results together.",
+    "resultsDescription": "Understand the graph, analysis overlays, and generated artifacts. Use the API when you want to integrate visualization into your own workflow.",
+    "resultsLinks": [
+      {
+        "label": "Understand the output",
+        "to": "/artifacts"
+      },
+      {
+        "label": "Follow the execution flow",
+        "to": "/execution_flow"
+      },
+      {
+        "label": "Use the Python API",
+        "to": "/api"
+      }
+    ]
+  }
 }

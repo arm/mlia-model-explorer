@@ -44,30 +44,39 @@ def on_page_context(
     context["landing"] = json.loads((source / "content.json").read_text())
     context["is_core"] = "capabilities" in context["landing"]
 
+    page_files = {
+        item.file.src_uri.removesuffix(".md"): item.file for item in nav.pages
+    }
+    page_files[""] = page.file
+
     def landing_url(url: str) -> str:
         parts = urlsplit(url)
         if parts.scheme or parts.netloc:
             return url
-        destination = parts.path.strip("/")
-        if destination == "documentation":
-            target = next(
-                item.file
-                for item in nav.pages
-                if item.file.src_uri == "documentation.md"
-            )
-        elif destination:
-            target = next(
-                item.file
-                for item in nav.pages
-                if item.file.src_uri == destination + ".md"
-            )
-        else:
-            target = page.file
+        target = page_files[parts.path.strip("/")]
         relative = str(get_relative_url(target.url, page.file.url))
         return relative + ("#" + parts.fragment if parts.fragment else "")
 
     context["landing_url"] = landing_url
     return context
+
+
+def _prefix_selector(match: re.Match[str]) -> str:
+    """Scope CSS module selectors without rewriting declaration values."""
+    selector = match.group()
+    if selector.lstrip().startswith("@"):
+        return selector
+
+    def prefix_class(token: re.Match[str]) -> str:
+        name = token.group(1)
+        return ".mlia-" + name if name else token.group()
+
+    return re.sub(
+        r"/\*.*?\*/|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|\.([a-zA-Z_][\w-]*)",
+        prefix_class,
+        selector,
+        flags=re.DOTALL,
+    )
 
 
 def on_post_build(config: MkDocsConfig) -> None:
@@ -81,33 +90,7 @@ def on_post_build(config: MkDocsConfig) -> None:
     css = css.replace(
         ':global(html[data-theme="dark"])', '[data-md-color-scheme="slate"]'
     )
-    css = re.sub(r"(?<![\w-])\.([a-zA-Z_][\w-]*)", r".mlia-\1", css)
-    css += """
-.mlia-home { margin: 0 -0.8rem; }
-.mlia-home .mlia-brand img { width: 100%; height: auto; }
-.mlia-logo-dark { display: none !important; }
-[data-md-color-scheme="slate"] .mlia-logo-light { display: none !important; }
-[data-md-color-scheme="slate"] .mlia-logo-dark { display: block !important; }
-.mlia-home h1, .mlia-home h2, .mlia-home h3 { font-weight: 500; }
-.mlia-home .mlia-hero h1 { color: var(--mlia-ink); font-weight: 600; }
-.mlia-home .mlia-analysisConsole pre {
- background: #f3f3f3; color: #080225; padding: 1.25rem;
- border-radius: 0.5rem; overflow: auto;
-}
-[data-md-color-scheme="slate"] .mlia-home .mlia-analysisConsole pre {
- background: #080225; color: #fff;
-}
-"""
-    css += """
-.mlia-home a.mlia-primaryButton,
-.mlia-home a.mlia-primaryButton:visited { color: #fff; }
-[data-md-color-scheme="slate"] .mlia-home a.mlia-primaryButton { color: #080225; }
-.mlia-home a.mlia-secondaryButton,
-.mlia-home a.mlia-capabilityCard,
-.mlia-home a.mlia-pluginCard,
-.mlia-home a.mlia-guideRow { color: var(--mlia-ink); }
-.mlia-home a.mlia-repositoryLink,
-.mlia-home a.mlia-cardLink,
-.mlia-home .mlia-textLinks a { color: var(--mlia-accent); }
-"""
+    css = re.sub(r"[^{}]+(?=\{)", _prefix_selector, css)
+    overrides = Path(__file__).parent / "overrides" / "landing.css"
+    css += overrides.read_text()
     (output / "landing.css").write_text(css)
