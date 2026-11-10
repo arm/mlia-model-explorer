@@ -12,10 +12,10 @@ plugin with ML Inference Advisor (MLIA).
 ## Table of Contents
 
 - [Overview](#overview)
-- [Repository contents](#repository-contents)
 - [Installation](#installation)
 - [Usage](#usage)
 - [ExecuTorch ETRecord profiling](#executorch-etrecord-profiling)
+- [Repository contents](#repository-contents)
 - [Reporting bugs](#reporting-bugs)
 - [Development (uv)](#development-uv)
 - [Documentation](#documentation)
@@ -33,15 +33,6 @@ Explorer visualizer component.
 Model conversion uses the `ai-edge-model-explorer` Python APIs, while browser
 rendering uses the vendored embedded Model Explorer visualizer. The generated
 page is self-contained and does not start the Python Model Explorer web server.
-
-## Repository contents
-
-- `src/mlia/model_explorer/`: plugin registration, artifact generation, model
-  adapters, and the vendored browser visualizer.
-- `tests/`: plugin, artifact, and browser tests.
-- `docs/`: usage, architecture, API, and development documentation.
-- `pre_commit_hooks/`: repository quality checks.
-- `pyproject.toml`: package metadata, dependencies, and test configuration.
 
 ## Installation
 
@@ -93,6 +84,15 @@ See [ETRecord profiling](docs/source/etrecord.md) for method selection,
 available views and measurement limitations. Companion input is also available
 through the Python API; clients without a companion-model selector can use the
 CLI or Python API for this workflow.
+
+## Repository contents
+
+- `src/mlia/model_explorer/`: plugin registration, artifact generation, model
+  adapters, and the vendored browser visualizer.
+- `tests/`: plugin, artifact, and browser tests.
+- `docs/`: usage, architecture, API, and development documentation.
+- `pre_commit_hooks/`: repository quality checks.
+- `pyproject.toml`: package metadata, dependencies, and test configuration.
 
 ## Reporting bugs
 
