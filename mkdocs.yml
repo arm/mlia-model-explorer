@@ -14,7 +14,7 @@ exclude_docs: |
   /landing-page/
 
 hooks:
-  - docs/landing.py
+  - docs/scripts/landing.py
 
 theme:
   name: material

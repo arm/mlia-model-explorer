@@ -91,6 +91,6 @@ def on_post_build(config: MkDocsConfig) -> None:
         ':global(html[data-theme="dark"])', '[data-md-color-scheme="slate"]'
     )
     css = re.sub(r"[^{}]+(?=\{)", _prefix_selector, css)
-    overrides = Path(__file__).parent / "overrides" / "landing.css"
+    overrides = Path(__file__).resolve().parents[1] / "overrides" / "landing.css"
     css += overrides.read_text()
     (output / "landing.css").write_text(css)
