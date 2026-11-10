@@ -35,7 +35,7 @@ jobs:
   destination:
     name: Select documentation destination
     if: github.repository_owner == 'Arm-Debug'
-    runs-on: ${{ vars.UBUNTU_RUNNER || 'ubuntu-24.04-arm' }}
+    runs-on: ${{ fromJSON(vars.UBUNTU_RUNNER_ARM64 || '["ubuntu-24.04-arm"]') }}
     outputs:
       environment: ${{ steps.select.outputs.environment }}
       aws-account: ${{ steps.select.outputs.aws-account }}
@@ -76,7 +76,7 @@ jobs:
       docs-root: docs/source
       docs-config: docs/docs-config.json
       site-id: mlia-model-explorer
-      runs-on: ${{ format('[{0}]', toJSON(vars.UBUNTU_RUNNER || 'ubuntu-24.04-arm')) }}
+      runs-on: ${{ vars.UBUNTU_RUNNER_ARM64 || '["ubuntu-24.04-arm"]' }}
       publish: >-
         ${{ github.event_name == 'workflow_dispatch' ||
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) }}
