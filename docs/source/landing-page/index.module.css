@@ -67,7 +67,12 @@
 
 .hero h1 span {
   display: block;
-  color: var(--mlia-ink);
+  color: var(--mlia-muted);
+  font-size: 0.48em;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+  margin-top: 0.9rem;
 }
 
 .lead,
@@ -494,33 +499,13 @@
   color: var(--mlia-ink);
 }
 
-.brand {
-  margin-top: 2.5rem;
-  padding: 1.25rem;
-  width: min(100%, 52rem);
-  background: var(--mlia-panel);
-  border-radius: 0.5rem;
-}
-.brand img {
-  display: block;
-  width: 100%;
-  height: auto;
-}
 @media (max-width: 640px) {
-  .brand {
-    padding: 1rem;
-    margin-top: 1.5rem;
-  }
   .hero {
     padding-top: 1.5rem;
   }
 }
 
 /* MLIA layout: introduction, analysis workspace, and toolkit directory. */
-.brand {
-  margin: 2.5rem auto 0;
-  width: min(100%, 46rem);
-}
 .hero {
   display: block;
   padding: 2rem 0 3.5rem;
@@ -661,10 +646,6 @@
   }
 }
 @media (max-width: 640px) {
-  .brand {
-    margin-top: 1.5rem;
-    padding-inline: 0;
-  }
   .hero {
     padding: 1.5rem 0 2.5rem;
   }
