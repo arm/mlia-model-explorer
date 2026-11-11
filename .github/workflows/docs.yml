@@ -8,6 +8,7 @@ on:
     paths:
       - 'README.md'
       - 'mkdocs.yml'
+      - 'mkdocs-offline.yml'
       - 'pyproject.toml'
       - 'docs/**'
       - '.github/workflows/docs.yml'
