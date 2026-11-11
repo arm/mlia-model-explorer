@@ -67,12 +67,7 @@
 
 .hero h1 span {
   display: block;
-  color: var(--mlia-muted);
-  font-size: 0.48em;
-  font-weight: 500;
-  line-height: 1.35;
-  letter-spacing: -0.02em;
-  margin-top: 0.9rem;
+  color: var(--mlia-ink);
 }
 
 .lead,

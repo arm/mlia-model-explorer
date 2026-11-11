@@ -13,8 +13,8 @@
 {% block content %}
 <div class="mlia-home"><div class="mlia-surface"><div class="mlia-page">
   <section class="mlia-hero" aria-labelledby="landing-title"><div class="mlia-heroCopy">
-    {% if not is_core %}<p class="mlia-eyebrow">{{ landing.category }} / {{ landing.title }}</p>{% endif %}
-    <h1 id="landing-title">Machine Learning Inference Advisor (MLIA)<span>{{ landing.headline }}</span></h1>
+    <p class="mlia-eyebrow">Machine Learning Inference Advisor (MLIA) / {{ landing.title }}</p>
+    <h1 id="landing-title">{{ landing.headline }}</h1>
     <p class="mlia-lead">{{ landing.lead }}</p>
     <div class="mlia-actions">
       {% if landing.learning %}{{ link(landing.learning, 'Follow the Learning Path', 'primaryButton') }}

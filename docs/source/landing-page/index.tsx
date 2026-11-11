@@ -15,12 +15,9 @@ export default function Home(): ReactElement {
           <section className={styles.hero} aria-labelledby="landing-title">
             <div className={styles.heroCopy}>
               <p className={styles.eyebrow}>
-                {landing.category} / {landing.title}
+                Machine Learning Inference Advisor (MLIA) / {landing.title}
               </p>
-              <h1 id="landing-title">
-                Machine Learning Inference Advisor (MLIA)
-                <span>{landing.headline}</span>
-              </h1>
+              <h1 id="landing-title">{landing.headline}</h1>
               <p className={styles.lead}>{landing.lead}</p>
               <div className={styles.actions}>
                 <SiteLink className={styles.primaryButton} to={landing.start}>
