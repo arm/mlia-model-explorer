@@ -14,8 +14,8 @@
 <div class="mlia-home"><div class="mlia-surface"><div class="mlia-page">
   <section class="mlia-hero" aria-labelledby="landing-title"><div class="mlia-heroCopy">
     {% if not is_core %}<p class="mlia-eyebrow">{{ landing.category }} / {{ landing.title }}</p>{% endif %}
-    <h1 id="landing-title">Machine Learning Inference Advisor (MLIA)</h1>
-    <p class="mlia-heroTagline">{{ landing.headline }}</p>
+    <h1 id="landing-title">{{ landing.headline if is_core else 'Machine Learning Inference Advisor (MLIA)' }}</h1>
+    <p class="mlia-heroTagline">{{ landing.headlineSecond if is_core else landing.headline }}</p>
     <p class="mlia-lead">{{ landing.lead }}</p>
     <div class="mlia-actions">
       {% if landing.learning %}{{ link(landing.learning, 'Follow the Learning Path', 'primaryButton') }}
