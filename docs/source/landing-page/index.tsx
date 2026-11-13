@@ -3,11 +3,8 @@
 
 import SiteLink, { LinkIndicator } from "./_links";
 import Layout from "@theme/Layout";
-import ThemedImage from "@theme/ThemedImage";
 import type { ReactElement } from "react";
 import { landing } from "./_homepage";
-import inkLogo from "./mlia-logo-stacked-ink.png";
-import whiteLogo from "./mlia-logo-stacked-white.png";
 import styles from "./index.module.css";
 
 export default function Home(): ReactElement {
@@ -15,20 +12,13 @@ export default function Home(): ReactElement {
     <Layout title={landing.title} description={landing.lead}>
       <main className={styles.surface}>
         <div className={styles.page}>
-          <div className={styles.brand}>
-            <ThemedImage
-              sources={{ light: inkLogo, dark: whiteLogo }}
-              alt="Arm machine learning inference advisor"
-              width="3300"
-              height="432"
-            />
-          </div>
           <section className={styles.hero} aria-labelledby="landing-title">
             <div className={styles.heroCopy}>
               <p className={styles.eyebrow}>
                 {landing.category} / {landing.title}
               </p>
-              <h1 id="landing-title">{landing.headline}</h1>
+              <h1 id="landing-title">Machine Learning Inference Advisor (MLIA)</h1>
+              <p className={styles.heroTagline}>{landing.headline}</p>
               <p className={styles.lead}>{landing.lead}</p>
               <div className={styles.actions}>
                 <SiteLink className={styles.primaryButton} to={landing.start}>
