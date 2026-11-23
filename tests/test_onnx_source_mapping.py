@@ -6,13 +6,12 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from mlia.core.errors import UnsupportedConfigurationError
 
-from mlia.model_explorer._artifacts import source_mapping, source_model
+from mlia.model_explorer._artifacts import source_mapping
 
 _ASSERT = unittest.TestCase()
 
@@ -23,27 +22,21 @@ def _source_node(
     outputs: tuple[str, ...] = ("y",),
     op_type: str = "Identity",
     domain: str = "",
-    attributes: tuple[Any, ...] = (),
-) -> SimpleNamespace:
-    return SimpleNamespace(
-        name=name,
-        output=list(outputs),
-        op_type=op_type,
-        domain=domain,
-        attribute=list(attributes),
-    )
+    has_subgraphs: bool = False,
+) -> dict[str, Any]:
+    return {
+        "name": name,
+        "output": list(outputs),
+        "op_type": op_type,
+        "domain": domain,
+        "has_subgraphs": has_subgraphs,
+    }
 
 
 def _model(
-    nodes: list[SimpleNamespace],
-    *,
-    graph_name: str = "main",
-    functions: tuple[Any, ...] = (),
-) -> SimpleNamespace:
-    return SimpleNamespace(
-        graph=SimpleNamespace(name=graph_name, node=nodes),
-        functions=list(functions),
-    )
+    nodes: list[dict], *, graph_name: str = "main", has_functions: bool = False
+) -> dict:
+    return {"name": graph_name, "nodes": nodes, "has_functions": has_functions}
 
 
 def _adapter_node(
@@ -75,16 +68,16 @@ def _graph_collection(
 
 def _mapping(
     monkeypatch: pytest.MonkeyPatch,
-    model: SimpleNamespace,
+    model: dict,
     graph_collection: dict[str, Any],
 ) -> dict[str, list[source_mapping._NodeRef]]:
     loads: list[Path] = []
 
-    def load_model(path: Path) -> SimpleNamespace:
+    def load_model(path: Path) -> dict:
         loads.append(path)
         return model
 
-    monkeypatch.setattr(source_mapping, "_load_onnx_model", load_model)
+    monkeypatch.setattr(source_mapping, "model_facts", load_model)
     mapping = source_mapping._source_operator_node_ids(
         Path("model.onnx"), graph_collection
     )
@@ -300,13 +293,12 @@ def test_graph_id_mismatch_is_blocking(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_onnx_subgraphs_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    subgraph_attribute = SimpleNamespace(g=object(), graphs=[])
     with pytest.raises(
         UnsupportedConfigurationError, match="does not support subgraphs"
     ):
         _mapping(
             monkeypatch,
-            _model([_source_node(attributes=(subgraph_attribute,))]),
+            _model([_source_node(has_subgraphs=True)]),
             _graph_collection([_adapter_node("node", "Identity", "y")]),
         )
 
@@ -317,50 +309,6 @@ def test_onnx_functions_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     ):
         _mapping(
             monkeypatch,
-            _model([_source_node()], functions=(object(),)),
+            _model([_source_node()], has_functions=True),
             _graph_collection([_adapter_node("node", "Identity", "y")]),
         )
-
-
-def test_real_adapter_handles_initialized_input_and_duplicate_names(tmp_path) -> None:
-    """Real adapter auxiliaries and NameFixPass renames preserve source identity."""
-    onnx = pytest.importorskip("onnx")
-    adapter_module = pytest.importorskip("model_explorer_onnx.main")
-
-    model_input = onnx.helper.make_tensor_value_info("x", onnx.TensorProto.FLOAT, [1])
-    model_output = onnx.helper.make_tensor_value_info("y", onnx.TensorProto.FLOAT, [1])
-    initializer = onnx.helper.make_tensor("x", onnx.TensorProto.FLOAT, [1], [1.0])
-    model = onnx.helper.make_model(
-        onnx.helper.make_graph(
-            [
-                onnx.helper.make_node("Identity", ["x"], ["first"], name="dup"),
-                onnx.helper.make_node("Identity", ["first"], ["y"], name="dup"),
-            ],
-            "main",
-            [model_input],
-            [model_output],
-            [initializer],
-        ),
-        opset_imports=[onnx.helper.make_opsetid("", 18)],
-    )
-    onnx.checker.check_model(model)
-    model_path = tmp_path / "initialized-duplicate.onnx"
-    onnx.save(model, model_path)
-
-    adapter_response = adapter_module.ONNXAdapter().convert(str(model_path), {})
-    graph_collection = source_model._source_model_graph_collection(
-        model_path, adapter_response
-    )
-    mapping = source_mapping._source_operator_node_ids(model_path, graph_collection)
-
-    _ASSERT.assertIn(
-        "InitializedInput",
-        {node["label"] for node in graph_collection["graphs"][0]["nodes"]},
-    )
-    _ASSERT.assertEqual(
-        mapping,
-        {
-            "source_operator/0": [_ref("main", "dup")],
-            "source_operator/1": [_ref("main", "dup_1")],
-        },
-    )

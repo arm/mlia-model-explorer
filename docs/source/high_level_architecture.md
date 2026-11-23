@@ -26,7 +26,7 @@ flowchart TD
     user[User or automation] --> cli[mlia check]
     cli --> core[MLIA analysis and standardized output]
     core --> plugin[Model Explorer analysis plugin]
-    model[Source or materialized model] --> adapters[Model Explorer adapter]
+    model[Source or materialized model] --> adapters[Isolated Model Explorer adapter subprocess]
     plugin --> adapters
     adapters --> source[Source graph collection]
     plugin --> hierarchy[Generated entity hierarchy graphs]
@@ -47,7 +47,8 @@ flowchart TD
 | Component | Responsibility |
 | --- | --- |
 | Analysis plugin | Registers the CLI option, rejects obsolete plugin settings, validates standardized output, and chooses build or open behavior. |
-| Source-model adapter layer | Selects an adapter from the model suffix, normalizes one graph collection, and establishes canonical source-operator node references. |
+| Shared Model Explorer runtime | Installs all adapters together; `model-explorer/process` returns graph JSON plus native source facts for each input. |
+| Frontend source-model layer | Selects the runtime, validates its result contract, normalizes graph collections, and establishes canonical source-operator references. |
 | Format integration | Supplies format-specific source identity, supplementary graph collections, entity references and presentation settings to the shared writers. |
 | Hierarchy graph generation | Discovers result-local entity-kind paths and renders Model Explorer namespace graphs without changing standardized output. |
 | Overlay generation | Converts placement, status, metrics, checks, and advice into graph-scoped node data. |

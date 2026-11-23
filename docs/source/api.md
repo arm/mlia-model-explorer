@@ -21,7 +21,7 @@ print(generated.manifest)
 
 The supported import surface of `mlia.model_explorer.artifacts` is:
 
-- The `write_artifacts(result)` function writes graph, overlay, navigation, and
+- The `write_artifacts(result, *, execution_profile=None)` function writes graph, overlay, navigation, and
   manifest files under `<result.output_dir>/model-explorer`.
 - The `ModelExplorerArtifacts` class provides immutable paths describing the
   generated root, manifest, standardized output, node-data files, generated
@@ -47,3 +47,8 @@ The path container and writer imports above are the intentionally supported
 package API. Helpers in `bundler`, `graph_data`, and `_artifacts` support the
 plugin implementation and may evolve with the embedded visualizer and artifact
 contract.
+
+The optional execution profile selects the adapter runtime independently of the
+analysis backend. If omitted, a combined analysis profile may supply the adapter
+binding; otherwise the shared `arm/model-explorer` profile is used. The writer
+installs that runtime lazily when conversion is needed.

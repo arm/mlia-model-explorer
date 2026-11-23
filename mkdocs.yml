@@ -65,4 +65,5 @@ nav:
   - Python API: api.md
   - Artifacts: artifacts.md
   - Model Adapters: adapters.md
+  - Adapter Runtimes: runtimes.md
   - Development: development.md

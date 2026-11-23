@@ -1,13 +1,15 @@
 # SPDX-FileCopyrightText: Copyright 2026, Arm Limited and/or its affiliates.
 # SPDX-License-Identifier: Apache-2.0
-"""Source-model discovery, adapter execution, and serialization."""
+"""Locate the source model and write its display graph and operator mappings.
+
+The runtime reads model files; this module supplies display settings and
+normalizes the returned JSON for the report.
+"""
 
 from __future__ import annotations
 
 import hashlib
-import importlib
 import shutil
-from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
@@ -20,17 +22,12 @@ from .source_mapping import _source_operator_node_ids
 
 _SOURCE_MODEL_COLLECTION_LABEL = "Source Model"
 
+# Reader modules and package dependencies belong to the isolated runtime.
 _ADAPTERS_BY_SUFFIX: dict[str, dict[str, Any]] = {
     ".pt2": {
-        "module": "model_explorer.builtin_pytorch_exportedprogram_adapter",
-        "extra": "",
-        "package": "ai-edge-model-explorer",
         "settings": {"const_element_count_limit": 16},
     },
     ".tflite": {
-        "module": "model_explorer.builtin_tflite_flatbuffer_adapter",
-        "extra": "",
-        "package": "ai-edge-model-explorer",
         # The Arm adapter optionally folds pseudo-const nodes because their IDs can
         # collide with nodes and groups targeted by MLIA overlay data, causing
         # colours to appear on the wrong boxes. The supported upstream built-in
@@ -38,35 +35,12 @@ _ADAPTERS_BY_SUFFIX: dict[str, dict[str, Any]] = {
         # pass unconditionally.
         "settings": {"fold_pseudo_const_nodes": True},
     },
-    ".onnx": {
-        "module": "model_explorer_onnx.main",
-        "extra": "onnx",
-        "package": "model-explorer-onnx",
-    },
-    ".spv": {
-        "module": "spirv_adapter_model_explorer.main",
-        "extra": "spirv",
-        "package": "spirv-adapter-model-explorer",
-    },
-    ".vgf": {
-        "module": "vgf_adapter_model_explorer.main",
-        "extra": "vgf",
-        "package": "vgf-adapter-model-explorer",
-    },
-    ".tosa": {
-        "module": "tosa_adapter_model_explorer.main",
-        "extra": "tosa",
-        "package": "tosa-adapter-model-explorer",
-    },
-    ".etrecord": {
-        "module": "etrecord_adapter_model_explorer.main",
-        "extra": "executorch",
-        "package": "etrecord-adapter-model-explorer",
-    },
+    ".onnx": {},
+    ".spv": {},
+    ".vgf": {},
+    ".tosa": {},
+    ".etrecord": {},
     ".bin": {
-        "module": "etrecord_adapter_model_explorer.main",
-        "extra": "executorch",
-        "package": "etrecord-adapter-model-explorer",
         "adapter_suffix": ".etrecord",
     },
 }
@@ -194,61 +168,10 @@ def _write_source_model_files(
 def _run_model_explorer_adapter(
     model_path: Path, adapter_info: dict[str, Any]
 ) -> dict[str, Any]:
-    """Run the Model Explorer adapter for a source model."""
-    module_name = adapter_info["module"]
-    try:
-        module = importlib.import_module(module_name)
-    except Exception as err:  # pylint: disable=broad-exception-caught
-        raise RuntimeError(_adapter_import_error_message(adapter_info, err)) from err
+    """Convert the model through the selected isolated adapter toolchain."""
+    from ..execution import convert_model
 
-    adapter_suffix = adapter_info.get("adapter_suffix", model_path.suffix)
-    adapter_class = _adapter_class(module, adapter_suffix)
-    if adapter_class is None:
-        raise RuntimeError(
-            f"Model Explorer adapter module {module_name} does not provide an "
-            f"adapter for {model_path.suffix}."
-        )
-
-    return adapter_class().convert(
-        str(model_path), dict(adapter_info.get("settings", {}))
-    )
-
-
-def _adapter_class(module: Any, suffix: str) -> type | None:
-    """Find an adapter class in an imported Model Explorer adapter module."""
-    expected_ext = suffix.lower().lstrip(".")
-    for value in vars(module).values():
-        if not isinstance(value, type):
-            continue
-        metadata = getattr(value, "metadata", None)
-        file_exts = getattr(metadata, "fileExts", [])
-        if expected_ext in [
-            str(file_ext).lower().lstrip(".") for file_ext in file_exts
-        ]:
-            return value
-    return None
-
-
-def _adapter_import_error_message(adapter_info: dict[str, Any], err: Exception) -> str:
-    install_lines = []
-    if adapter_info["extra"]:
-        install_lines.extend(
-            [
-                "Install the required optional dependency, for example:",
-                "  python -m pip install "
-                f'"mlia-model-explorer[{adapter_info["extra"]}]"',
-                "",
-                "or install the adapter package directly, for example:",
-            ]
-        )
-    else:
-        install_lines.append("Install the required package, for example:")
-    install_lines.append(f"  python -m pip install {adapter_info['package']}")
-    return (
-        "Model Explorer needs an adapter package for this model file, but it "
-        f"could not be imported:\n\n  {adapter_info['module']}\n"
-        f"  {type(err).__name__}: {err}\n\n" + "\n".join(install_lines)
-    )
+    return convert_model(model_path, adapter_info)
 
 
 def _source_model_graph_collection(
@@ -263,7 +186,7 @@ def _source_model_graph_collection(
         model_path, adapter_response
     )
     if live_graph_collection is not None:
-        graph_collection = _without_none(_jsonable(live_graph_collection))
+        graph_collection = _without_none(live_graph_collection)
         if not isinstance(graph_collection, dict):
             raise RuntimeError(
                 "Model Explorer adapter returned an invalid graph collection."
@@ -274,19 +197,8 @@ def _source_model_graph_collection(
     graphs = adapter_response.get("graphs") or []
     return {
         "label": _SOURCE_MODEL_COLLECTION_LABEL,
-        "graphs": _without_none(_jsonable(graphs)),
+        "graphs": _without_none(graphs),
     }
-
-
-def _jsonable(value: Any) -> Any:
-    """Convert dataclass adapter objects to JSON-compatible values."""
-    if is_dataclass(value):
-        return _jsonable(asdict(value))
-    if isinstance(value, dict):
-        return {key: _jsonable(item) for key, item in value.items()}
-    if isinstance(value, list | tuple):
-        return [_jsonable(item) for item in value]
-    return value
 
 
 def _without_none(value: Any) -> Any:

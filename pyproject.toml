@@ -3,6 +3,7 @@
 
 [build-system]
 requires = [
+    "mlia>=0.13.2.dev4,<0.14.0",
     "hatchling>=1.27.0",
     "uv-dynamic-versioning>=0.8.2,<0.9.0"
 ]
@@ -14,12 +15,7 @@ dynamic = ["version"]
 description = "ML Inference Advisor Model Explorer Plugin"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = [
-    "mlia>=0.13.0,<0.14",
-    # Python adapter/conversion API only. The compatible browser runtime is the
-    # vendored embedded visualizer documented in README.md.
-    "ai-edge-model-explorer>=0.1.32,<0.2"
-]
+dependencies = ["mlia>=0.13.2.dev4,<0.14.0"]
 keywords = ["ml", "arm", "mlia", "model-explorer"]
 authors = [{name = "Arm Ltd", email = "mlia@arm.com"}]
 license = "Apache-2.0"
@@ -32,25 +28,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence"
 ]
 
-[project.optional-dependencies]
-spirv = ["spirv-adapter-model-explorer"]
-vgf = ["vgf-adapter-model-explorer"]
-tosa = ["tosa-adapter-model-explorer"]
-onnx = ["model-explorer-onnx>=0.4.2,<0.5"]
-executorch = [
-    "etrecord-adapter-model-explorer",
-    "pte-adapter-model-explorer",
-    "vgf-adapter-model-explorer>=0.5.1",
-]
-adapters = [
-    "spirv-adapter-model-explorer",
-    "vgf-adapter-model-explorer>=0.5.1",
-    "tosa-adapter-model-explorer",
-    "etrecord-adapter-model-explorer",
-    "pte-adapter-model-explorer",
-    "model-explorer-onnx>=0.4.2,<0.5",
-]
-
 [project.urls]
 Homepage = "https://github.com/arm/mlia-model-explorer.git"
 
@@ -60,6 +37,9 @@ model_explorer = "mlia.model_explorer.plugin:ModelExplorerAnalysisPlugin"
 [tool.hatch.version]
 source = "uv-dynamic-versioning"
 
+[tool.hatch.build.hooks.custom]
+path = "runtime/hatch_runtime.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/mlia"]
 artifacts = [
@@ -67,6 +47,8 @@ artifacts = [
     "src/mlia/model_explorer/model-explorer-visualizer/**"
 ]
 exclude = [
+    "src/mlia/**/worker.py",
+    "src/mlia/resources/runtimes/**",
     "**/__pycache__",
     "**/*.pyc"
 ]
@@ -74,15 +56,31 @@ exclude = [
 [tool.hatch.build.targets.sdist]
 include = [
     "src/mlia/**",
+    "runtime/**",
     "docs/**",
     "LICENSES/*.txt",
     "README.md",
     "mkdocs.yml",
     "pyproject.toml"
 ]
-exclude = [
+exclude = ["src/mlia/resources/runtimes/**", 
     "**/__pycache__",
     "**/*.pyc"
+]
+
+[tool.uv]
+# Editable wheels contain generated runtime bundles. Track their authored inputs,
+# excluding build/ and runtime/inputs so preparation does not invalidate itself.
+cache-keys = [
+    {file = "pyproject.toml"},
+    {file = "hatch_build.py"},
+    {file = "runtime/*.py"},
+    {file = "runtime/*.json"},
+    {file = "runtime/*/pyproject.toml"},
+    {file = "src/mlia/**/*.py"},
+    {file = "src/mlia/resources/**/*"},
+    {file = "LICENSES/*.txt"},
+    {git = {commit = true, tags = true}},
 ]
 
 [tool.uv-dynamic-versioning]
@@ -125,3 +123,7 @@ docs = [
     "mkdocs-material>=9.5,<10.0",
     "pymdown-extensions>=10.0,<11.0"
 ]
+
+# Worker code is exercised by installed-runtime E2E tests, outside frontend coverage.
+[tool.coverage.run]
+omit = ["*/worker.py"]

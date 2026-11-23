@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: Copyright 2026, Arm Limited and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning", "mlia>=0.13.2.dev4,<0.14.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mlia-runtime-model-explorer"
+dynamic = ["version"]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "ai-edge-model-explorer==0.1.34",
+    "model-explorer-onnx==0.4.2",
+    "torch==2.14.0+cpu",
+    "executorch==1.5.1",
+    "etrecord-adapter-model-explorer==0.2.1",
+    "pte-adapter-model-explorer==0.2.0",
+    "spirv-adapter-model-explorer==0.2.1",
+    "tosa-adapter-model-explorer==0.1.0",
+    "vgf-adapter-model-explorer==0.5.2",
+]
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+dirty = true
+bump = true
+
+[tool.hatch.build.targets.wheel]
+bypass-selection = true
+
+[tool.hatch.build.hooks.custom]
+path = "../package_hook.py"
+modules = ["mlia.model_explorer.worker"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"../adapters.json" = "mlia_runtime_assets/resources/adapters.json"
+"../../LICENSES/Apache-2.0.txt" = "mlia_runtime_assets/resources/licenses/Apache-2.0.txt"
+
+[tool.mlia.runtime]
+id = "arm/model-explorer/public"
+python = "3.12"
+architectures = ["x86_64"]
+indexes = ["https://download.pytorch.org/whl/cpu"]
+
+[tool.mlia.runtime.operations."model-explorer/process"]
+entrypoint = "mlia.model_explorer.worker:run"
+result_schema = "model-explorer/1"

@@ -16,6 +16,13 @@ model-explorer/
 ├── standardized-output.json
 ├── sync-navigation.json
 ├── entity-node-mappings.json
+├── runtime/
+│   ├── execution-plan.json
+│   └── runtime-jobs/<job-id>/
+│       ├── request.json
+│       ├── result.json
+│       ├── conversion.json
+│       └── worker.log
 ├── models/
 │   ├── <model>-source.json
 │   └── <model>-hierarchy-<entity-kinds>.json

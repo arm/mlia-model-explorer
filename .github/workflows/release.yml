@@ -108,7 +108,7 @@ jobs:
               github.ref == 'refs/heads/main' &&
               github.repository_owner != 'arm'
             }}
-      - run: uv sync --no-sources --no-install-project --extra onnx --no-default-groups --group test
+      - run: uv sync --no-sources --no-install-project --no-default-groups --group test
       - shell: bash
         run: |
           set -o pipefail

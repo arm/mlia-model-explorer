@@ -14,20 +14,10 @@ Install the plugin in the same Python environment as MLIA:
 python -m pip install mlia-model-explorer
 ```
 
-The base package includes Model Explorer's built-in PyTorch ExportedProgram and
-TFLite conversion support. Install an extra when the model format needs a
-separate adapter, for example:
-
-```bash
-python -m pip install "mlia-model-explorer[onnx]"
-python -m pip install "mlia-model-explorer[spirv]"
-python -m pip install "mlia-model-explorer[vgf]"
-python -m pip install "mlia-model-explorer[executorch]"
-```
-
-See [Model Adapters](adapters.md) before choosing an extra; installing an adapter
-does not by itself guarantee that this plugin has a verified source-identity
-mapping for the format.
+All adapter dependencies install together in one isolated runtime on first use.
+The frontend package no longer offers adapter extras. See [Model Adapters](adapters.md)
+for supported mappings and [Runtime selection](runtimes.md) for profile selection.
+Runtime installation currently requires Linux and a compatible host Python.
 
 The [ETRecord profiling guide](etrecord.md) adds measured ETDump commands,
 method selection and an optional PTE companion to the workflows below.
@@ -94,7 +84,7 @@ rather than a guaranteed complete runtime Python call stack.
 
 | Symptom | Action |
 | --- | --- |
-| Adapter import error | Install the extra or adapter package named in the error, in the same environment as MLIA. |
+| Adapter import error | Inspect the runtime worker log named in the error; select a compatible adapter profile or reinstall its runtime package. |
 | Unsupported model format or mapping | Check the [adapter matrix](adapters.md); the plugin fails rather than guessing node identity. |
 | Materialized model hash or size mismatch | Regenerate the backend output and ensure the model file is directly inside the MLIA output root. |
 | Plugin settings are no longer supported | Move collapse and filtering rules to MLIA core configuration. |

@@ -8,6 +8,7 @@ from unittest.mock import Mock
 import pytest
 from mlia.core.errors import ConfigurationError
 
+from mlia.model_explorer import execution
 from mlia.model_explorer._artifacts import etrecord, source_mapping
 
 
@@ -84,7 +85,7 @@ def test_external_etrecord_nodes_map_to_stable_source_identities(
     def unexpected_import(name):
         raise AssertionError(f"Mapping must not deserialize ETRecord again: {name}")
 
-    monkeypatch.setattr(source_mapping.importlib, "import_module", unexpected_import)
+    monkeypatch.setattr(execution, "model_facts", unexpected_import)
     output = {
         "extensions": {
             "executorch": {
@@ -187,7 +188,7 @@ def test_source_mapping_uses_adapter_metadata_without_reparsing(monkeypatch, suf
     def unexpected_import(name):
         raise AssertionError(f"Mapping must not deserialize ETRecord again: {name}")
 
-    monkeypatch.setattr(source_mapping.importlib, "import_module", unexpected_import)
+    monkeypatch.setattr(execution, "model_facts", unexpected_import)
     collection = {
         "label": "Source Model",
         "graphs": [
@@ -244,8 +245,8 @@ def test_source_mapping_uses_adapter_metadata_without_reparsing(monkeypatch, suf
 def test_native_identity_names_keep_repeated_handles_method_scoped(monkeypatch):
     """Shared debug handles do not merge different operations or methods."""
     monkeypatch.setattr(
-        source_mapping.importlib,
-        "import_module",
+        execution,
+        "model_facts",
         lambda name: pytest.fail(f"Unexpected reparse: {name}"),
     )
     collection = {

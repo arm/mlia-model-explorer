@@ -14,11 +14,11 @@ VGF profiling. Other model formats are covered in [Usage](usage.md) and
 
 Supply the `.etrecord` (or `.bin`) and its matching `.etdump` (or `.etdp`). Add a
 matching `.pte` if you also want its VGF compiler graph. The following command
-installs the required ExecuTorch extras for this run and opens the visualization:
+installs the required ExecuTorch runtime profiles for this run and opens the visualization:
 
 ```bash
-uv run --with "mlia-neural-technology[executorch]" \
-  --with "mlia-model-explorer[executorch]" \
+uv run --with mlia-neural-technology \
+  --with mlia-model-explorer \
   mlia check model.etrecord \
   --target-profile neural-technology \
   --performance \

@@ -1,0 +1,11 @@
+{
+  ".onnx": "model_explorer_onnx.main",
+  ".pt2": "model_explorer.builtin_pytorch_exportedprogram_adapter",
+  ".etrecord": "etrecord_adapter_model_explorer.main",
+  ".bin": "etrecord_adapter_model_explorer.main",
+  ".pte": "pte_adapter_model_explorer.main",
+  ".spv": "spirv_adapter_model_explorer.main",
+  ".tflite": "model_explorer.builtin_tflite_flatbuffer_adapter",
+  ".tosa": "tosa_adapter_model_explorer.main",
+  ".vgf": "vgf_adapter_model_explorer.main"
+}

@@ -37,11 +37,35 @@ class _ModelExplorerAnalysisPlugin:
                     "'files' or 'open'."
                 ),
             ),
+            click.Option(
+                ["--model-explorer-execution-profile"],
+                metavar="PROFILE",
+                help=(
+                    "Select the Model Explorer adapter execution profile "
+                    "(name or TOML path)."
+                ),
+            ),
         ]
 
     def enabled(self, args: Mapping[str, object]) -> bool:
         """Return whether the plugin is enabled."""
         return args.get("model_explorer") is not None
+
+    def execution_plan(
+        self, args: Mapping[str, object], parameters: Mapping[str, object]
+    ) -> dict | None:
+        """Preview adapter selection without installing or executing it."""
+        from pathlib import Path
+
+        from .execution import select_conversion_profile
+
+        model = parameters.get("model")
+        if model is None:
+            return None
+        selection = args.get("model_explorer_execution_profile")
+        return select_conversion_profile(
+            Path(str(model)), str(selection) if selection else None, parameters
+        ).describe()
 
     def run(self, result: AnalysisRunResult) -> None:
         """Export artifacts and optionally open them."""
@@ -57,7 +81,12 @@ class _ModelExplorerAnalysisPlugin:
             )
         validate_standardized_output(result.output or {}, use_jsonschema=False)
         mode = cast(str, result.args.get("model_explorer") or "files")
-        artifacts = write_artifacts(result)
+        selection = result.args.get("model_explorer_execution_profile")
+        artifacts = (
+            write_artifacts(result, execution_profile=str(selection))
+            if selection
+            else write_artifacts(result)
+        )
         logger.info("Model Explorer artifacts written to %s", artifacts.root)
         logger.info("Model Explorer manifest: %s", artifacts.manifest)
 

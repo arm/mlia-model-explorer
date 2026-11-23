@@ -45,16 +45,10 @@ from .serialization import _safe_filename
 from .source_mapping import _node_string_attr, _vgf_source_operator_node_ids
 from .source_model import (
     _graph_collection_label,
-    _jsonable,
     _run_model_explorer_adapter,
     _without_none,
 )
 
-_PTE_COMPANION_ADAPTER: dict[str, Any] = {
-    "module": "pte_adapter_model_explorer.main",
-    "extra": "executorch",
-    "package": "pte-adapter-model-explorer",
-}
 _PTE_RUNTIME_COLLECTION_LABEL = "PTE - VGF Backend Hierarchy"
 _ETDUMP_INFORMATION_COLLECTION_LABEL = "ETDump Backend Trace"
 
@@ -190,7 +184,7 @@ def _companion_model_artifact(
     if pte_path is None:
         return None
 
-    adapter_response = _run_model_explorer_adapter(pte_path, _PTE_COMPANION_ADAPTER)
+    adapter_response = _run_model_explorer_adapter(pte_path, {})
     raw_collections = adapter_response.get("graphCollections") or []
     if not isinstance(raw_collections, list) or not raw_collections:
         raise RuntimeError("PTE adapter did not return any graph collections.")
@@ -227,7 +221,7 @@ def _companion_model_artifact(
 
 def _pte_vgf_graph_collection(raw_collections: list[Any]) -> dict[str, Any]:
     """Return only delegate graphs referenced by VgfBackend runtime calls."""
-    collections = [_without_none(_jsonable(item)) for item in raw_collections]
+    collections = [_without_none(item) for item in raw_collections]
     if not all(isinstance(item, dict) for item in collections):
         raise RuntimeError("PTE adapter returned an invalid graph collection.")
 

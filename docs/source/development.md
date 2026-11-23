@@ -11,6 +11,11 @@ sidebar_position: 11
 Use normal `uv` commands when testing the dependency versions declared by this
 repository:
 
+The package build prepares the shared worker wheel described in
+`runtime/README.md`; no separate preparation step is needed. Development tests
+mock the processing boundary and do not require installing adapter packages in
+the frontend.
+
 ```bash
 uv sync --group dev
 uv run pytest
@@ -19,6 +24,16 @@ uv run pytest
 Artifact and browser tests cover public imports, adapter mappings, graph-qualified
 navigation, overlay routing, bundle selection, escaping, and execution of the
 vendored visualizer when a supported headless browser is available.
+
+Run the separate runtime check with real models to verify graph export, HTML
+bundling, and frontend dependency isolation:
+
+```bash
+uv run python tests/e2e/check_runtime.py model.tflite model.pt2 model.onnx
+```
+
+It provisions the selected runtime on first use. `--execution-profile` selects
+a custom profile; `--output-dir` changes the default `report/runtime-e2e` directory.
 
 ## Local sibling checkouts
 

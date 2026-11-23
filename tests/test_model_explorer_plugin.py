@@ -622,6 +622,16 @@ def _companion_analysis(output, pte=None, *, associations=None, delegates=None):
     }
 
 
+def _stub_conversion(monkeypatch, reader):
+    """Supply graph JSON at the runtime boundary without loading adapters."""
+
+    def convert(model, info):
+        return reader(str(model), dict(info.get("settings", {})))
+
+    monkeypatch.setattr(source_model_module, "_run_model_explorer_adapter", convert)
+    monkeypatch.setattr(et_integration, "_run_model_explorer_adapter", convert)
+
+
 @pytest.mark.parametrize("changed", [False, True])
 def test_companion_verification_streams_pte(tmp_path, monkeypatch, changed):
     """Verification detects changed companions without allocating the full PTE."""
@@ -775,7 +785,7 @@ def test_plugin_registers_with_registry() -> None:
     assert len(registry.plugins) == 1
 
     options = registry.cli_options()
-    assert len(options) == 1
+    assert len(options) == 2
     assert all(isinstance(option, click.Option) for option in options)
 
     # options_by_name to avoid making the test depend on option ordering.
@@ -962,21 +972,16 @@ def test_write_artifacts_adds_companion_model_view_with_result_metrics(
     etrecord.write_bytes(b"etrecord")
     pte = tmp_path / "model.pte"
     pte.write_bytes(b"pte")
-    etrecord_module = SimpleNamespace(ETRecordAdapter=_CompanionETRecordAdapter)
-    pte_module = SimpleNamespace(PTEAdapter=_CompanionPteAdapter)
 
-    def import_adapter(module_name: str):
-        if module_name == "etrecord_adapter_model_explorer.main":
-            return etrecord_module
-        if module_name == "pte_adapter_model_explorer.main":
-            return pte_module
-        raise ImportError(module_name)
+    def read_graph(model_path, settings):
+        adapter = (
+            _CompanionPteAdapter
+            if Path(model_path).suffix == ".pte"
+            else _CompanionETRecordAdapter
+        )
+        return adapter().convert(model_path, settings)
 
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(side_effect=import_adapter),
-    )
+    _stub_conversion(monkeypatch, read_graph)
     monkeypatch.setattr(
         source_model_module,
         "_source_operator_node_ids",
@@ -1679,12 +1684,7 @@ def test_json_artifact_writer_rejects_non_finite_numbers(
 
 def test_write_artifacts(tmp_path: Path, monkeypatch) -> None:
     """Artifact generation writes manifest, output, mapping, and node data."""
-    fake_module = SimpleNamespace(TfliteAdapter=_OperatorIndexAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _OperatorIndexAdapter().convert)
     artifacts = write_artifacts(_run_result(tmp_path, model_name="model.tflite"))
 
     _ASSERT.assertTrue(artifacts.manifest.exists())
@@ -1816,12 +1816,7 @@ def test_write_artifacts_with_missing_standardized_output(
     monkeypatch,
 ) -> None:
     """Artifact generation handles runs with no standardized output."""
-    fake_module = SimpleNamespace(TfliteAdapter=_OperatorIndexAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _OperatorIndexAdapter().convert)
     artifacts = write_artifacts(
         _run_result(tmp_path, output=None, model_name="model.tflite")
     )
@@ -1846,12 +1841,7 @@ def test_write_artifacts_uses_materialized_output_model_without_cli_model(
     monkeypatch,
 ) -> None:
     """A backend-materialized model is used when no CLI model was supplied."""
-    fake_module = SimpleNamespace(SpirvAdapter=_StandaloneSpirvAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _StandaloneSpirvAdapter().convert)
     result = _run_result(
         tmp_path,
         model_exists=False,
@@ -1940,12 +1930,7 @@ def test_write_artifacts_uses_entity_references_for_node_data(
     monkeypatch,
 ) -> None:
     """Node-data overlays resolve checks, advice, and breakdowns through entities."""
-    fake_module = SimpleNamespace(TfliteAdapter=_OperatorIndexAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _OperatorIndexAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -2082,12 +2067,7 @@ def test_write_artifacts_maps_each_source_node_to_its_source_operator(
     monkeypatch,
 ) -> None:
     """Source nodes map directly to source operators, not ancestor entities."""
-    fake_module = SimpleNamespace(TfliteAdapter=_OperatorIndexAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _OperatorIndexAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -2149,12 +2129,7 @@ def test_write_artifacts_groups_source_model_with_entity_namespaces(
     monkeypatch,
 ) -> None:
     """Entity kind hierarchy groups the cloned source graph."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -2348,12 +2323,7 @@ def test_write_artifacts_preserves_escaped_source_namespace_mapping_prefixes(
     monkeypatch,
 ) -> None:
     """Escaped slashes in source namespaces do not split mapping prefixes."""
-    fake_module = SimpleNamespace(VGFAdapter=_EscapedNamespaceAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _EscapedNamespaceAdapter().convert)
 
     artifacts = write_artifacts(_run_result(tmp_path, model_name="model.vgf"))
 
@@ -2371,12 +2341,7 @@ def test_write_artifacts_omits_leaf_mappings_for_matching_namespace_groups(
     monkeypatch,
 ) -> None:
     """Same namespace groups on both sides rely on Model Explorer ID fallback."""
-    fake_module = SimpleNamespace(VGFAdapter=_MatchingNamespaceAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _MatchingNamespaceAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -2421,12 +2386,7 @@ def test_write_artifacts_keeps_statsless_parent_subgraphs_in_entity_namespaces(
     monkeypatch,
 ) -> None:
     """Visual namespaces include all parent subgraph entity levels."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -2651,12 +2611,7 @@ def test_write_artifacts_disambiguates_duplicate_entity_namespace_names(
     monkeypatch,
 ) -> None:
     """Duplicate entity names remain separate namespace groups and node-data keys."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -2751,12 +2706,7 @@ def test_write_artifacts_escapes_entity_name_namespace_separators(
     monkeypatch,
 ) -> None:
     """Entity names with slashes remain one visual namespace component."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -2836,12 +2786,7 @@ def test_write_artifacts_keeps_parent_subgraphs_result_local(
     monkeypatch,
 ) -> None:
     """Each result gets its own hierarchy graph and metric namespace state."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     entities = [
         {
             "id": "segment-0",
@@ -2965,12 +2910,7 @@ def test_write_artifacts_uses_builtin_source_operator_metadata_relationship(
     monkeypatch,
 ) -> None:
     """Declared built-in source_operator metadata still drives hierarchy tracing."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -3019,12 +2959,7 @@ def test_write_artifacts_uses_parent_ids_as_canonical_visual_tree(
     monkeypatch,
 ) -> None:
     """Entity parent_ids win over conflicting child_ids."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -3093,12 +3028,7 @@ def test_write_artifacts_uses_child_ids_when_parent_ids_are_absent(
     monkeypatch,
 ) -> None:
     """Entity child_ids infer hierarchy parents when child parent_ids are absent."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -3155,12 +3085,7 @@ def test_write_artifacts_emits_separate_overlays_per_result_field(
     monkeypatch,
 ) -> None:
     """Common result fields are emitted as focused node-data files."""
-    fake_module = SimpleNamespace(TfliteAdapter=_OperatorIndexAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _OperatorIndexAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -3287,12 +3212,7 @@ def _metric_overlay_output(breakdowns: list[dict]) -> dict:
 def _write_metric_overlay_artifacts(
     tmp_path: Path, monkeypatch, breakdowns: list[dict]
 ):
-    fake_module = SimpleNamespace(TfliteAdapter=_OperatorIndexAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _OperatorIndexAdapter().convert)
     return write_artifacts(
         _run_result(
             tmp_path,
@@ -3327,12 +3247,7 @@ def test_source_namespace_metrics_are_projected_through_faithful_hierarchy(
     block_indices: tuple[int, int] | None,
 ) -> None:
     """Consumer projection honors additive flags and recorded execution cohorts."""
-    fake_module = SimpleNamespace(TfliteAdapter=_NamespaceMetricAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _NamespaceMetricAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -3423,12 +3338,7 @@ def test_source_namespace_metrics_use_explicit_group_ids_when_tensor_names_colli
     monkeypatch,
 ) -> None:
     """Namespace metrics cannot resolve to constants with matching tensor names."""
-    fake_module = SimpleNamespace(TfliteAdapter=_NamespaceTensorCollisionAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _NamespaceTensorCollisionAdapter().convert)
     output = _metric_overlay_output(
         [
             {
@@ -3464,12 +3374,7 @@ def test_source_namespace_metrics_copy_complete_parent_entity_figures(
     monkeypatch,
 ) -> None:
     """A source namespace may copy a complete parent without leaf statistics."""
-    fake_module = SimpleNamespace(TfliteAdapter=_NamespaceMetricAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _NamespaceMetricAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -3535,12 +3440,7 @@ def test_metric_qualifiers_create_distinct_overlays_without_merging_values(
     monkeypatch,
 ) -> None:
     """Metric qualifier variants retain separate logical overlays and values."""
-    fake_module = SimpleNamespace(TfliteAdapter=_OperatorIndexAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _OperatorIndexAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -3640,12 +3540,7 @@ def test_breakdown_qualifiers_create_distinct_overlays_without_merging_values(
     monkeypatch,
 ) -> None:
     """Breakdown qualifier variants retain separate logical overlays and values."""
-    fake_module = SimpleNamespace(TfliteAdapter=_OperatorIndexAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _OperatorIndexAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -3702,12 +3597,7 @@ def test_breakdown_and_metric_qualifier_scopes_remain_distinct(
     monkeypatch,
 ) -> None:
     """Equal qualifier content at different scopes remains distinct and named."""
-    fake_module = SimpleNamespace(TfliteAdapter=_OperatorIndexAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _OperatorIndexAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -4358,12 +4248,7 @@ def test_write_artifacts_disambiguates_normalized_node_data_filenames(
     monkeypatch,
 ) -> None:
     """Distinct overlay names survive collisions after filename normalization."""
-    fake_module = SimpleNamespace(TfliteAdapter=_OperatorIndexAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _OperatorIndexAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -4573,12 +4458,7 @@ def test_build_artifacts_bundle_writes_standalone_html(
     monkeypatch,
 ) -> None:
     """Standalone HTML embeds the visualizer, graph collections, and node data."""
-    fake_module = SimpleNamespace(TfliteAdapter=_OperatorIndexAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _OperatorIndexAdapter().convert)
     artifacts = write_artifacts(_run_result(tmp_path, model_name="model.tflite"))
 
     index = build_artifacts_bundle(artifacts.root)
@@ -4865,12 +4745,7 @@ def test_build_artifacts_bundle_opens_source_and_overlay_rich_entity_graph_side_
     overlay_name: str,
 ) -> None:
     """Initial split view prefers the generated graph with greatest data coverage."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -4963,12 +4838,7 @@ def test_build_artifacts_bundle_falls_back_to_op_cycles_selected_node_data(
     monkeypatch,
 ) -> None:
     """Op cycles are selected by default when total cycles are unavailable."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -5017,12 +4887,7 @@ def test_build_artifacts_bundle_skips_selected_node_data_without_default_overlay
     monkeypatch,
 ) -> None:
     """No selected node-data default is emitted without known cycle overlays."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -5065,12 +4930,7 @@ def test_write_artifacts_emits_one_graph_per_declared_entity_kind_hierarchy(
     monkeypatch,
 ) -> None:
     """Multiple source-operator-rooted entity-kind paths produce multiple graphs."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -5124,12 +4984,7 @@ def test_write_artifacts_renders_supplied_code_stack_without_second_transformati
     monkeypatch,
 ) -> None:
     """Model Explorer renders already-collapsed standardized output unchanged."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -5167,12 +5022,7 @@ def test_write_artifacts_targets_namespace_overlays_to_matching_graph_collection
     monkeypatch,
 ) -> None:
     """Node-data overlays are scoped to graph collections containing their keys."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -5237,12 +5087,7 @@ def test_write_artifacts_omits_node_data_with_no_matching_graph_collection(
     monkeypatch,
 ) -> None:
     """Node-data files with no matching graph collection are omitted entirely."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -5279,12 +5124,7 @@ def test_write_artifacts_targets_one_overlay_to_multiple_graph_collections(
     monkeypatch,
 ) -> None:
     """A node-data overlay is listed once for each matching graph collection."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},
@@ -5374,12 +5214,7 @@ def test_write_artifacts_targets_one_overlay_to_multiple_graph_collections(
 
 def test_open_artifacts_bundle_opens_file_url(tmp_path: Path, monkeypatch) -> None:
     """Open mode opens the generated standalone HTML via file URL."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     artifacts = write_artifacts(_run_result(tmp_path, model_name="model.vgf"))
     opened_urls: list[str] = []
     monkeypatch.setattr(bundler_module.webbrowser, "open", opened_urls.append)
@@ -5395,13 +5230,10 @@ def test_write_artifacts_runs_adapter_and_writes_source_graph_json(
     monkeypatch,
 ) -> None:
     """Known source model formats are converted to Model Explorer JSON upfront."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    import_module = MagicMock(return_value=fake_module)
-    monkeypatch.setattr(source_model_module.importlib, "import_module", import_module)
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
 
     artifacts = write_artifacts(_run_result(tmp_path, model_name="model.vgf"))
 
-    import_module.assert_called_once_with("vgf_adapter_model_explorer.main")
     source_model = _read_json(artifacts.root / "models" / "model-source.json")
     expected = _FakeAdapter().convert(str(tmp_path / "model.vgf"), {})
     expected["label"] = "Source Model"
@@ -5416,7 +5248,7 @@ def test_write_artifacts_runs_onnx_adapter(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    """ONNX models use the optional adapter and canonical source mapping."""
+    """ONNX graph JSON retains canonical source mappings in the report."""
 
     class ONNXAdapter:
         metadata = SimpleNamespace(fileExts=["onnx"])
@@ -5444,33 +5276,28 @@ def test_write_artifacts_runs_onnx_adapter(
                 ]
             }
 
-    source_model = SimpleNamespace(
-        graph=SimpleNamespace(
-            name="main",
-            node=[
-                SimpleNamespace(
-                    name="",
-                    output=["y"],
-                    op_type="Identity",
-                    domain="",
-                    attribute=[],
-                )
-            ],
-        ),
-        functions=[],
-    )
-    fake_module = SimpleNamespace(ONNXAdapter=ONNXAdapter)
-    import_module = MagicMock(return_value=fake_module)
-    monkeypatch.setattr(source_model_module.importlib, "import_module", import_module)
+    source_facts = {
+        "name": "main",
+        "has_functions": False,
+        "nodes": [
+            {
+                "name": "",
+                "output": ["y"],
+                "op_type": "Identity",
+                "domain": "",
+                "has_subgraphs": False,
+            }
+        ],
+    }
+    _stub_conversion(monkeypatch, ONNXAdapter().convert)
     monkeypatch.setattr(
         source_mapping_module,
-        "_load_onnx_model",
-        MagicMock(return_value=source_model),
+        "model_facts",
+        MagicMock(return_value=source_facts),
     )
 
     generated = write_artifacts(_run_result(tmp_path, model_name="model.onnx"))
 
-    import_module.assert_called_once_with("model_explorer_onnx.main")
     source_graph = _read_json(generated.root / "models" / "model-source.json")
     _ASSERT.assertEqual(source_graph["graphs"][0]["nodes"][0]["id"], "adapter_node")
 
@@ -5480,12 +5307,7 @@ def test_write_artifacts_overwrites_single_adapter_graph_collection_label(
     monkeypatch,
 ) -> None:
     """Single adapter graph collection labels are normalized to Source Model."""
-    fake_module = SimpleNamespace(VGFAdapter=_SingleGraphCollectionAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _SingleGraphCollectionAdapter().convert)
 
     artifacts = write_artifacts(_run_result(tmp_path, model_name="model.vgf"))
 
@@ -5501,12 +5323,7 @@ def test_write_artifacts_rejects_multiple_non_etrecord_graph_collections(
     monkeypatch,
 ) -> None:
     """Non-ETRecord adapters retain main's single-collection contract."""
-    fake_module = SimpleNamespace(VGFAdapter=_MultipleGraphCollectionAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _MultipleGraphCollectionAdapter().convert)
 
     with pytest.raises(RuntimeError) as error:
         write_artifacts(_run_result(tmp_path, model_name="model.vgf"))
@@ -5522,15 +5339,10 @@ def test_write_artifacts_runs_builtin_tflite_adapter(
     monkeypatch,
 ) -> None:
     """TFLite source models use the built-in Python Model Explorer adapter."""
-    fake_module = SimpleNamespace(TfliteAdapter=_TfliteOperatorIndexAdapter)
-    import_module = MagicMock(return_value=fake_module)
-    monkeypatch.setattr(source_model_module.importlib, "import_module", import_module)
+    _stub_conversion(monkeypatch, _TfliteOperatorIndexAdapter().convert)
 
     artifacts = write_artifacts(_run_result(tmp_path, model_name="model.tflite"))
 
-    import_module.assert_called_once_with(
-        "model_explorer.builtin_tflite_flatbuffer_adapter"
-    )
     source_model = _read_json(artifacts.root / "models" / "model-source.json")
     _ASSERT.assertEqual(source_model["label"], "Source Model")
     _ASSERT.assertEqual(source_model["graphs"][0]["nodes"][0]["id"], "0")
@@ -5544,12 +5356,7 @@ def test_build_artifacts_bundle_uses_generated_graph_json_files(
     monkeypatch,
 ) -> None:
     """Serialized Model Explorer graph files are embedded for the visualizer."""
-    fake_module = SimpleNamespace(VGFAdapter=_FakeAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _FakeAdapter().convert)
     artifacts = write_artifacts(_run_result(tmp_path, model_name="model.vgf"))
 
     index = build_artifacts_bundle(artifacts.root)
@@ -5561,26 +5368,15 @@ def test_build_artifacts_bundle_uses_generated_graph_json_files(
     )
 
 
-def test_write_artifacts_reports_missing_required_adapter(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    """Missing optional adapters are reported while writing artifacts."""
+def test_write_artifacts_reports_runtime_failure(tmp_path: Path, monkeypatch) -> None:
+    """Adapter runtime failures propagate without suggesting frontend installs."""
     monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(
-            side_effect=ImportError("No module named 'vgf_adapter_model_explorer'")
-        ),
+        source_model_module,
+        "_run_model_explorer_adapter",
+        MagicMock(side_effect=ConfigurationError("Model Explorer runtime failed")),
     )
-
-    with pytest.raises(RuntimeError) as err:
+    with pytest.raises(ConfigurationError, match="Model Explorer runtime failed"):
         write_artifacts(_run_result(tmp_path, model_name="model.vgf"))
-
-    message = str(err.value)
-    _ASSERT.assertIn("vgf_adapter_model_explorer.main", message)
-    _ASSERT.assertIn("mlia-model-explorer[vgf]", message)
-    _ASSERT.assertIn("vgf-adapter-model-explorer", message)
 
 
 def test_write_artifacts_maps_vgf_spirv_source_locations_to_stable_node_ids(
@@ -5588,12 +5384,7 @@ def test_write_artifacts_maps_vgf_spirv_source_locations_to_stable_node_ids(
     monkeypatch,
 ) -> None:
     """VGF/SPIR-V source locations map directly to stable adapter node ids."""
-    fake_module = SimpleNamespace(VGFAdapter=_SpirvIdAdapter)
-    monkeypatch.setattr(
-        source_model_module.importlib,
-        "import_module",
-        MagicMock(return_value=fake_module),
-    )
+    _stub_conversion(monkeypatch, _SpirvIdAdapter().convert)
     output = {
         "schema_version": "1.2.0",
         "model": {},

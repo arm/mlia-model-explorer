@@ -30,7 +30,8 @@ The plugin exports MLIA standardized output into Model Explorer-oriented
 artifacts and builds a standalone HTML page using the vendored embedded Model
 Explorer visualizer component.
 
-Model conversion uses the `ai-edge-model-explorer` Python APIs, while browser
+Model processing uses one isolated runtime for all adapters; the frontend installs no adapter,
+Torch, ExecuTorch, or ONNX dependencies. Browser
 rendering uses the vendored embedded Model Explorer visualizer. The generated
 page is self-contained and does not start the Python Model Explorer web server.
 
@@ -42,9 +43,10 @@ Install the plugin in the same Python environment as MLIA:
 python -m pip install mlia-model-explorer
 ```
 
-The base package supports `.pt2` and `.tflite`. Optional extras provide `.onnx`,
-`.spv` and `.vgf` adapters; see the [model adapter matrix](docs/source/adapters.md)
-for installation commands and format-specific details.
+The package includes a runtime definition, worker wheel and shared input profile. The
+toolchain installs automatically into its own virtual environment on first use.
+See the [model adapter matrix](docs/source/adapters.md) and
+[runtime contracts](docs/source/runtimes.md) for profiles and format limitations.
 
 ## Usage
 
@@ -64,11 +66,11 @@ It can be opened directly from `file://` without separate runtime or data files.
 
 Use the matching ETRecord and ETDump to visualize source runtime timings and,
 when captured, VGF cycle measurements. An optional matching PTE adds its compiler
-graph. This workflow requires MLIA with the ExecuTorch extras installed:
+graph. The required target and adapter runtimes are selected independently:
 
 ```bash
-uv run --with "mlia-neural-technology[executorch]" \
-  --with "mlia-model-explorer[executorch]" \
+uv run --with mlia-neural-technology \
+  --with mlia-model-explorer \
   mlia check model.etrecord \
   --target-profile neural-technology \
   --performance \

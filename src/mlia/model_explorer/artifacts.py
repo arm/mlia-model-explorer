@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from mlia.plugins.analysis import AnalysisRunResult
 
 from ._artifacts.formats import _format_integration
@@ -32,7 +34,17 @@ from ._artifacts.source_model import (
 __all__ = ["ModelExplorerArtifacts", "write_artifacts"]
 
 
-def write_artifacts(result: AnalysisRunResult) -> ModelExplorerArtifacts:
+def write_artifacts(
+    result: AnalysisRunResult, *, execution_profile: str | Path | None = None
+) -> ModelExplorerArtifacts:
+    """Write artifacts, isolating adapter dependencies in the selected runtime."""
+    from .execution import conversion_session
+
+    with conversion_session(result, execution_profile):
+        return _write_artifacts(result)
+
+
+def _write_artifacts(result: AnalysisRunResult) -> ModelExplorerArtifacts:
     """Write Model Explorer artifact files for an MLIA run."""
     root = result.output_dir / "model-explorer"
     node_data_dir = root / "node-data"

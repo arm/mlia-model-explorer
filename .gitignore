@@ -20,3 +20,7 @@ uv.lock
 local-overrides.txt
 coverage.xml
 .mkdocs/site
+
+# Runtime publishing inputs and generated archives
+/runtime/inputs/
+/src/mlia/resources/runtimes/**/runtime.tar.gz

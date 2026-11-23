@@ -8,21 +8,25 @@ sidebar_position: 10
 
 The plugin selects a Model Explorer adapter from the effective model's filename
 suffix. It then requires a verified mapping from MLIA source-operator entity IDs
-to the adapter's graph nodes. Adapter installation and end-to-end mapping support
+to the adapter's graph nodes. Isolated adapter installation and end-to-end mapping support
 are therefore separate requirements.
+
+All formats use the `arm/model-explorer` profile and the same runtime environment.
+The worker selects a format adapter within that environment. These dependencies
+are installed automatically there; users do not need to install them separately.
 
 ## Support matrix
 
-| Format | Dependency | Source-identity behavior | End-to-end status |
+| Format | Dependency in the isolated runtime | Source-identity behavior | End-to-end status |
 | --- | --- | --- | --- |
-| `.pt2` | Base `ai-edge-model-explorer` dependency | Matches top-level exported-program FX node names to one adapter graph. | Supported |
-| `.tflite` | Base `ai-edge-model-explorer` dependency | Uses operator indices within each flatbuffer subgraph; identical indices remain graph-qualified. | Supported |
-| `.onnx` | `mlia-model-explorer[onnx]` | Correlates top-level ONNX nodes through name, output tensors, and operation labels, requiring a complete one-to-one match. | Supported with restrictions |
-| `.spv` | `mlia-model-explorer[spirv]` | Uses native SPIR-V result-ID metadata exposed by the adapter. | Supported |
-| `.vgf` | `mlia-model-explorer[vgf]` | Combines VGF segment identity with native SPIR-V result-ID metadata. | Supported |
-| `.etrecord`, `.bin` | `mlia-model-explorer[executorch]` | Uses method-qualified ETRecord source identities and measured-output compiler associations. | Supported for ETRecord profiling |
-| Companion `.pte` | `mlia-model-explorer[executorch]` | Consumes analyzed method/instruction/segment/SPIR-V identities; requires matching structural IDs from the adapter. | VGF companion only; see [ETRecord profiling](etrecord.md) |
-| `.tosa` | `mlia-model-explorer[tosa]` | No verified native source-operator identity contract is implemented. | Not yet supported end to end |
+| `.pt2` | `ai-edge-model-explorer` | Matches top-level exported-program FX node names to one adapter graph. | Supported |
+| `.tflite` | `ai-edge-model-explorer` | Uses operator indices within each flatbuffer subgraph; identical indices remain graph-qualified. | Supported |
+| `.onnx` | `model-explorer-onnx` | Correlates top-level ONNX nodes through name, output tensors, and operation labels, requiring a complete one-to-one match. | Supported with restrictions |
+| `.spv` | `spirv-adapter-model-explorer` | Uses native SPIR-V result-ID metadata exposed by the adapter. | Supported |
+| `.vgf` | `vgf-adapter-model-explorer` | Combines VGF segment identity with native SPIR-V result-ID metadata. | Supported |
+| `.etrecord`, `.bin` | `etrecord-adapter-model-explorer` | Uses method-qualified ETRecord source identities and measured-output compiler associations. | Supported for ETRecord profiling |
+| Companion `.pte` | `pte-adapter-model-explorer` | Consumes analyzed method/instruction/segment/SPIR-V identities; requires matching structural IDs from the adapter. | VGF companion only; see [ETRecord profiling](etrecord.md) |
+| `.tosa` | `tosa-adapter-model-explorer` | No verified native source-operator identity contract is implemented. | Not yet supported end to end |
 
 PTE visualization is available through `--companion-model` with an ETRecord input.
 Standalone `.pte` inputs are not supported; they are rejected before adapter
@@ -65,3 +69,5 @@ Loading these artifacts in a separately installed Model Explorer server is
 unsupported until that project builds its `web_app`, bumps the package version,
 and publishes a release containing the graph-mapping runtime. Do not infer or
 substitute an upstream version that has not been published.
+
+Runtime IDs use the owning wheel version. See [runtime selection and contracts](runtimes.md).

@@ -12,10 +12,11 @@ Installing the package registers `ModelExplorerAnalysisPlugin` in the
 `mlia.plugin.analysis` Python entry-point group. MLIA loads that entry point and
 the plugin registers the `model-explorer` post-analysis implementation.
 
-The plugin contributes one Click option:
+The plugin contributes two Click options:
 
 ```text
 --model-explorer MODE
+--model-explorer-execution-profile PROFILE
 ```
 
 `MODE` is either `files` or `open`. Without this option the plugin is disabled.
@@ -28,7 +29,8 @@ visualization. See [ETRecord profiling](etrecord.md) for the rendering requireme
 MLIA supplies an `AnalysisRunResult` after analysis. The plugin uses its:
 
 - Parsed arguments to select the mode.
-- Parameters to locate the command-line model.
+- Parameters to locate the command-line model and the execution profile.
+- An optional API prompt callback for runtime licence acceptance.
 - Standardized output to generate hierarchy and overlay data.
 - Output directory as the parent of `model-explorer/`.
 
@@ -53,3 +55,6 @@ Configuration, validation, adapter, mapping, serialization, and bundle errors ar
 allowed to propagate to MLIA's normal command error handling. The plugin does not
 silently omit an unsupported model format or an ambiguous source mapping because
 that could attach results to the wrong graph nodes.
+
+Its optional `execution_plan(args, parameters)` hook lets core include the adapter
+binding in `--show-plan` without running post-analysis or installing dependencies.

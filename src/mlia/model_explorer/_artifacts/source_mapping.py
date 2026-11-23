@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import importlib
 import re
 from collections import Counter
 from pathlib import Path
@@ -13,6 +12,7 @@ from typing import Any
 from mlia.core import output_schema as schema
 from mlia.core.errors import UnsupportedConfigurationError
 
+from ..execution import model_facts
 from .models import _NodeRef
 
 
@@ -60,20 +60,14 @@ _ONNX_AUXILIARY_NODE_LABELS = frozenset(
 )
 
 
-def _load_onnx_model(model_path: Path) -> Any:
-    """Load the original ONNX model once for source-operator correlation."""
-    onnx = importlib.import_module("onnx")
-    return onnx.load(str(model_path), load_external_data=False)
-
-
 def _onnx_source_operator_node_ids(
     model_path: Path,
     graph_collection: dict[str, Any],
 ) -> dict[str, list[_NodeRef]]:
     """Map top-level ONNX nodes to actual nodes emitted by the ONNX adapter."""
-    model = _load_onnx_model(model_path)
-    source_nodes = list(model.graph.node)
-    _reject_unsupported_onnx_graphs(model, source_nodes)
+    facts = model_facts(model_path)
+    source_nodes = facts["nodes"]
+    _reject_unsupported_onnx_graphs(facts)
 
     graphs = list(graph_collection.get("graphs", []) or [])
     if len(graphs) != 1 or not isinstance(graphs[0], dict):
@@ -82,7 +76,7 @@ def _onnx_source_operator_node_ids(
             "the top-level ModelProto.graph."
         )
     graph = graphs[0]
-    expected_graph_id = str(model.graph.name or "<main>")
+    expected_graph_id = facts["name"] or "<main>"
     graph_id = graph.get("id")
     if graph_id != expected_graph_id:
         raise RuntimeError(
@@ -97,15 +91,13 @@ def _onnx_source_operator_node_ids(
         if node["label"] not in _ONNX_AUXILIARY_NODE_LABELS
     ]
     source_name_counts = Counter(
-        str(getattr(source_node, "name", "") or "")
-        for source_node in source_nodes
-        if str(getattr(source_node, "name", "") or "")
+        source_node["name"] for source_node in source_nodes if source_node["name"]
     )
     collection_label = str(graph_collection["label"])
     mappings: dict[str, list[_NodeRef]] = {}
     used_node_ids: set[str] = set()
     for node_index, source_node in enumerate(source_nodes):
-        source_name = str(getattr(source_node, "name", "") or "")
+        source_name = source_node["name"]
         adapter_node = _match_onnx_adapter_node(
             node_index,
             source_node,
@@ -134,30 +126,20 @@ def _onnx_source_operator_node_ids(
     return mappings
 
 
-def _reject_unsupported_onnx_graphs(model: Any, source_nodes: list[Any]) -> None:
-    """Reject ONNX structures that need a future graph-qualified identity."""
-    if list(getattr(model, "functions", []) or []):
+def _reject_unsupported_onnx_graphs(facts: dict[str, Any]) -> None:
+    """Reject ONNX functions and subgraphs without graph-qualified identities."""
+    if facts["has_functions"]:
         raise UnsupportedConfigurationError(
             "Model Explorer ONNX source-operator mapping does not support ONNX "
             "functions; a future graph-qualified identity format is required."
         )
-    for node_index, node in enumerate(source_nodes):
-        for attribute in list(getattr(node, "attribute", []) or []):
-            has_graph = False
-            has_field = getattr(attribute, "HasField", None)
-            if callable(has_field):
-                try:
-                    has_graph = bool(has_field("g"))
-                except ValueError:
-                    has_graph = False
-            else:
-                has_graph = getattr(attribute, "g", None) is not None
-            if has_graph or list(getattr(attribute, "graphs", []) or []):
-                raise UnsupportedConfigurationError(
-                    "Model Explorer ONNX source-operator mapping does not support "
-                    f"subgraphs (top-level node index {node_index}); a future "
-                    "graph-qualified identity format is required."
-                )
+    for node_index, node in enumerate(facts["nodes"]):
+        if node["has_subgraphs"]:
+            raise UnsupportedConfigurationError(
+                "Model Explorer ONNX source-operator mapping does not support "
+                f"subgraphs (top-level node index {node_index}); a future "
+                "graph-qualified identity format is required."
+            )
 
 
 def _onnx_adapter_nodes(graph: dict[str, Any]) -> list[dict[str, Any]]:
@@ -186,17 +168,15 @@ def _onnx_adapter_nodes(graph: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _match_onnx_adapter_node(
     node_index: int,
-    source_node: Any,
+    source_node: dict[str, Any],
     adapter_nodes: list[dict[str, Any]],
     *,
     source_name_is_unique: bool,
 ) -> dict[str, Any]:
     """Require all authoritative native evidence to identify one adapter node."""
-    source_name = str(getattr(source_node, "name", "") or "")
+    source_name = source_node["name"]
     source_outputs = {
-        str(output_name)
-        for output_name in list(getattr(source_node, "output", []) or [])
-        if str(output_name)
+        str(output_name) for output_name in source_node["output"] if str(output_name)
     }
     name_candidates = (
         [node for node in adapter_nodes if node["id"] == source_name]
@@ -272,10 +252,10 @@ def _require_single_onnx_evidence_candidate(
         )
 
 
-def _onnx_operation_label(source_node: Any) -> str:
+def _onnx_operation_label(source_node: dict[str, Any]) -> str:
     """Return the domain-qualified label emitted by the ONNX adapter."""
-    domain = str(getattr(source_node, "domain", "") or "")
-    op_type = str(getattr(source_node, "op_type", "") or "")
+    domain = source_node["domain"]
+    op_type = source_node["op_type"]
     return op_type if domain in {"", "ai.onnx"} else f"{domain}::{op_type}"
 
 
@@ -303,25 +283,12 @@ def _onnx_output_tensor_tags(node: dict[str, Any]) -> set[str]:
 _PT2_OPERATION_NODE_OPS = frozenset({"call_function", "call_method", "call_module"})
 
 
-def _load_pt2_exported_program(model_path: Path) -> Any:
-    """Load a PT2 ExportedProgram for canonical source-node discovery."""
-    torch = importlib.import_module("torch")
-    return torch.export.load(model_path)
-
-
 def _pt2_source_operator_node_ids(
     model_path: Path,
     graph_collection: dict[str, Any],
 ) -> dict[str, list[_NodeRef]]:
     """Map top-level PT2 operation names to built-in adapter node IDs."""
-    exported_program = _load_pt2_exported_program(model_path)
-    graph_module = getattr(exported_program, "graph_module", None)
-    graph = getattr(graph_module, "graph", None)
-    source_nodes = list(getattr(graph, "nodes", []) or [])
-    if graph is None:
-        raise RuntimeError(
-            "PT2 source-operator mapping requires an ExportedProgram graph module."
-        )
+    source_nodes = model_facts(model_path)["nodes"]
 
     graphs = list(graph_collection.get("graphs", []) or [])
     if len(graphs) != 1 or not isinstance(graphs[0], dict):
@@ -346,7 +313,7 @@ def _pt2_source_operator_node_ids(
             )
         adapter_node_ids.add(adapter_node_id)
 
-    source_node_names = [str(node.name) for node in source_nodes]
+    source_node_names = [node["name"] for node in source_nodes]
     if len(source_node_names) != len(set(source_node_names)):
         raise RuntimeError("PT2 ExportedProgram graph contains duplicate node names.")
     if set(source_node_names) != adapter_node_ids:
@@ -359,11 +326,11 @@ def _pt2_source_operator_node_ids(
 
     collection_label = str(graph_collection["label"])
     return {
-        schema.pt2_source_operator_id(str(node.name)): [
-            _NodeRef(collection_label, graph_id, str(node.name))
+        schema.pt2_source_operator_id(node["name"]): [
+            _NodeRef(collection_label, graph_id, node["name"])
         ]
         for node in source_nodes
-        if getattr(node, "op", None) in _PT2_OPERATION_NODE_OPS
+        if node["op"] in _PT2_OPERATION_NODE_OPS
     }
 
 

@@ -36,7 +36,6 @@ from .models import (
 )
 from .serialization import _safe_filename, _write_json
 from .source_model import (
-    _jsonable,
     _without_none,
 )
 
@@ -553,14 +552,14 @@ def _entity_hierarchy_graph(
     for node in source_nodes:
         node_id = node.get("id")
         if not isinstance(node_id, str) or not node_id:
-            cloned_nodes.append(_without_none(_jsonable(node)))
+            cloned_nodes.append(_without_none(node))
             continue
         paths = tuple(
             sorted(dict.fromkeys(source_operator_paths_by_node_id.get(node_id, ())))
         )
         generated_ids = generated_ids_by_source_id[node_id]
         for index, generated_node_id in enumerate(generated_ids):
-            cloned_node = _without_none(_jsonable(node))
+            cloned_node = _without_none(node)
             cloned_node["id"] = generated_node_id
             cloned_node["namespace"] = (
                 paths[index] if len(paths) > 1 else (paths[0] if paths else "")
@@ -584,13 +583,11 @@ def _entity_hierarchy_graph(
                 ]
             cloned_nodes.append(cloned_node)
 
-    cloned = _without_none(_jsonable(graph))
+    cloned = _without_none(graph)
     cloned["id"] = generated_graph_id
     cloned["nodes"] = cloned_nodes
     if presentation.group_node_configs is not None:
-        cloned["groupNodeConfigs"] = _without_none(
-            _jsonable(presentation.group_node_configs)
-        )
+        cloned["groupNodeConfigs"] = _without_none(presentation.group_node_configs)
     for node in cloned_nodes:
         if "subgraphIds" not in node:
             continue
@@ -720,7 +717,7 @@ def _redirect_incoming_edges(
     """Redirect each original edge once to the final upstream sub-operator."""
     redirected: list[Any] = []
     for edge in incoming_edges:
-        cloned_edge = _without_none(_jsonable(edge))
+        cloned_edge = _without_none(edge)
         if isinstance(cloned_edge, dict):
             source_node_id = cloned_edge.get("sourceNodeId")
             if isinstance(source_node_id, str):
@@ -757,7 +754,7 @@ def _source_model_with_entity_namespaces(
     presentation: _HierarchyPresentation = _HierarchyPresentation(),
 ) -> _HierarchyGraphCollection:
     """Return one result's hierarchy graph and explicit canonical correspondence."""
-    graph_collection = _without_none(_jsonable(source_graph_collection))
+    graph_collection = _without_none(source_graph_collection)
     source_collection_label = str(source_graph_collection["label"])
     source_graph_node_ids = _source_graph_node_ids(source_graph_collection)
     stats_bearing_entity_ids = _stats_bearing_entity_ids([result])

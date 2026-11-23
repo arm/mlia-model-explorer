@@ -55,7 +55,7 @@ jobs:
         with:
           path: ~/.cache/pre-commit
           key: pre-commit|${{ runner.os }}|${{ env.PYTHON_VERSION }}|${{ hashFiles('.pre-commit-config.yaml') }}
-      - run: uv sync --no-sources --extra onnx --group dev
+      - run: uv sync --no-sources --group dev
       - name: Copyright
         run: uv run pre-commit run --all-files
       - name: Lint
@@ -132,7 +132,7 @@ jobs:
         uses: browser-actions/setup-chrome@48483d551c22a1fe6154c6a195ccc6d5773dc8c4 # v2
         with:
           chrome-version: stable
-      - run: uv sync --no-sources --extra onnx --group test
+      - run: uv sync --no-sources --group test
       - name: Run tests
         shell: bash
         run: |

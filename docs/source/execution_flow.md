@@ -13,7 +13,7 @@ sequenceDiagram
     participant U as User
     participant M as MLIA core
     participant P as Model Explorer plugin
-    participant A as Model adapter
+    participant A as Isolated adapter subprocess
     participant B as Bundler
     participant R as Browser
 
@@ -21,8 +21,9 @@ sequenceDiagram
     M->>M: Analyze and produce standardized output
     M->>P: AnalysisRunResult
     P->>P: Validate output and resolve model
-    P->>A: Convert supported source model
-    A-->>P: One source graph collection
+    P->>M: Select and provision adapter runtime
+    P->>A: JSON request with model path and adapter options
+    A-->>P: Declared JSON artifact with graphs and native source facts
     P->>P: Generate hierarchies, overlays, and mappings
     P->>P: Write manifest and artifacts
     P->>B: Build standalone index.html
