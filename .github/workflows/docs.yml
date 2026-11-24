@@ -8,6 +8,7 @@ on:
     paths:
       - 'README.md'
       - 'mkdocs.yml'
+      - 'mkdocs-offline.yml'
       - 'pyproject.toml'
       - 'docs/**'
       - '.github/workflows/docs.yml'
@@ -111,7 +112,11 @@ jobs:
           --from 'mkdocs>=1.6,<2.0'
           --with 'mkdocs-material>=9.5,<10.0'
           --with 'pymdown-extensions>=10.0,<11.0'
-          mkdocs build --strict --no-directory-urls
+          mkdocs build --strict --no-directory-urls -f mkdocs-offline.yml
+      - name: Verify offline search assets
+        run: |
+          test -s .mkdocs/site/search/search_index.js
+          grep -q 'https://unpkg.com/iframe-worker/shim' .mkdocs/site/index.html
       - name: Upload docs artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
