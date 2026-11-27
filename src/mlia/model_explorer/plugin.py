@@ -12,6 +12,7 @@ import click
 from mlia.core.errors import ConfigurationError
 from mlia.plugins.analysis import AnalysisPluginRegistry, AnalysisRunResult
 from mlia.plugins.plugins import AnalysisPlugin
+from mlia.utils.logging import log_progress_action
 
 from mlia.model_explorer.bundler import build_artifacts_bundle, open_artifacts_bundle
 
@@ -94,7 +95,9 @@ class _ModelExplorerAnalysisPlugin:
             index = open_artifacts_bundle(artifacts.root)
         else:
             index = build_artifacts_bundle(artifacts.root)
-        logger.info("Model Explorer standalone HTML: %s", index)
+        log_progress_action(
+            logger, "Open the Model Explorer report in your browser: %s", index
+        )
 
 
 class ModelExplorerAnalysisPlugin(AnalysisPlugin[AnalysisPluginRegistry]):

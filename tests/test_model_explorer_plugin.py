@@ -16,6 +16,7 @@ from unittest.mock import MagicMock
 import click
 import pytest
 from mlia.core.errors import ConfigurationError, UnsupportedConfigurationError
+from mlia.core.logging import close_configured_handlers, setup_logging
 from mlia.core.output_validation import SchemaValidationError
 from mlia.plugins.analysis import AnalysisPluginRegistry, AnalysisRunResult
 
@@ -4375,6 +4376,31 @@ def test_plugin_run_files_writes_bundle_without_opening(
     build_bundle.assert_called_once()
     _ASSERT.assertEqual(build_bundle.call_args.args[0].name, "model-explorer")
     open_bundle.assert_not_called()
+
+
+@pytest.mark.parametrize("output_format", ["plain_text", "json"])
+def test_plugin_bundle_notice_respects_check_output(
+    tmp_path: Path, monkeypatch, capsys, output_format: str
+) -> None:
+    """The report path is visible in checks without corrupting JSON output."""
+    registry = AnalysisPluginRegistry()
+    ModelExplorerAnalysisPlugin.register(registry)
+    index = tmp_path / "index.html"
+    monkeypatch.setattr(
+        "mlia.model_explorer.plugin.build_artifacts_bundle",
+        MagicMock(return_value=index),
+    )
+    setup_logging(output_format=output_format, progress_only=True)
+    try:
+        registry.plugins[0].run(_run_result(tmp_path, mode="files", model_exists=False))
+    finally:
+        close_configured_handlers()
+
+    stdout = capsys.readouterr().out
+    if output_format == "plain_text":
+        assert f"Open the Model Explorer report in your browser: {index}" in stdout
+    else:
+        assert stdout == ""
 
 
 def test_plugin_run_explicit_files_mode_with_companion(
